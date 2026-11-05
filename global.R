@@ -15,6 +15,21 @@ library(rdshinyappar)
 
 options(shiny.sanitize.errors = TRUE)
 
+# Färgpalett från stilmallen regiondalarna.css (grafiska manualens blå färgvektor).
+# Röd används bara som varning eller status, så den finns inte i diagrammen.
+rd_farg <- list(
+  primar = "#158daf",      # --rd-primary, huvudfärg i diagram
+  primar_mork = "#0f7090", # --rd-primary-dark
+  accent = "#54a1bd",      # --rd-accent
+  ljus = "#8edded",        # --rd-blue-light
+  bla_djup = "#0074a2",    # --rd-blue-deep, markerar valt distrikt
+  gra_mork = "#424242",    # --rd-gray-dark
+  gra = "#969696",         # --rd-gray
+  mark = "#d9ecf3",        # ljus accentton för markerad rad
+  kvinnor = "#e2a855",     # rgb(226, 168, 85), kvinnor i staplar och linjer
+  man = "#459079"          # rgb(69, 144, 121), män i staplar och linjer
+)
+
 #============================================================================
 # DEL 1: Tabeller (kontrakt, validering, inläsning, exempeldata)
 #============================================================================
@@ -59,6 +74,28 @@ tabellkontrakt <- list(
   sysselsattning_kon = list(
     nyckel = c("ar", "omrade", "block", "rad"), text = c("block", "rad"),
     matt = c("man", "kvinnor"), antal = NULL
+  ),
+  # Befolkning och flytt över flera år per distrikt (längre serie än flytt_sum). Kolumner:
+  # ar, omrade, man, kvinnor (befolkning räknas ut), inflyttad, utflyttad.
+  flytt_serie_ar = list(
+    nyckel = c("ar", "omrade"), text = character(), matt = "befolkning",
+    antal = c("befolkning", "man", "kvinnor", "inflyttad", "utflyttad")  # flyttnetto kan vara negativt
+  ),
+  # De största pendlingsriktningarna ut från distriktet: en rad per år, distrikt och rang (1 = störst).
+  # Kolumner som känns igen: rang, kommun (kod eller namn), antal. Se forbered_riktning().
+  riktning_storst_pendling = list(
+    nyckel = c("ar", "omrade", "rang"), text = character(), matt = "antal", antal = "antal"
+  ),
+  # Pendling per distrikt, år och kön (bred tabell). Kolumner som används: borarbetar,
+  # inpendling, utpendling samt dagbef och nattbef om de finns. Övriga kolumner (t.ex.
+  # uppgift_arb_saknas) behålls men visas inte.
+  # Personbilar i trafik per distrikt och år, en kolumn per drivmedel (personbilar_bensin m.fl.).
+  bilar_distrikt = list(
+    nyckel = c("ar", "omrade"), text = character(), matt = NULL, antal = NULL
+  ),
+  pendling = list(
+    nyckel = c("ar", "omrade", "kon"), text = "kon", matt = NULL,
+    antal = c("borarbetar", "inpendling", "utpendling", "dagbef", "nattbef", "uppgift_arb_saknas")
   )
 )
 
@@ -112,7 +149,60 @@ visa_tabell <- function(df, heltal = character(), procent = character(), ...) {
   dt
 }
 
-tema_app <- function() ggplot2::theme_minimal(base_size = 12)
+# Är Poppins installerat på maskinen som kör R? Då räknar diagrammen ut textens bredd med Poppins,
+# så att etiketter inte överlappar. Annars används standardtypsnittet för måtten (webbläsaren ritar
+# ändå Poppins, vilket är något bredare).
+poppins_finns <- tryCatch(
+  requireNamespace("systemfonts", quietly = TRUE) &&
+    any(grepl("^Poppins", systemfonts::system_fonts()$family)),
+  error = function(e) FALSE)
+# Poppins för statiska diagram (cirkeldiagrammet ritas som bild i R, inte i webbläsaren, så typsnittet
+# måste finnas för R). Ordning: 1) installerat på maskinen, 2) fontfil i appmappen
+# (fonts/Poppins-Regular.ttf, ev. Poppins-Bold.ttf), 3) hämtas från Google Fonts (kräver internet).
+# Returnerar typsnittsnamnet som diagrammet ska använda ("sans" om inget lyckas).
+statisk_font <- local({
+  klar <- NULL
+  function() {
+    if (!is.null(klar)) return(klar)
+    klar <<- "sans"
+    if (poppins_finns) {
+      klar <<- "Poppins"
+      # Standardenheten för bilder i Windows slår bara upp typsnitt i R:s egen Windows-lista
+      # ("font family not found in Windows font database"). Därför: använd ragg om det finns
+      # (läser systemets typsnitt direkt), annars registrera Poppins i Windows-listan.
+      if (requireNamespace("ragg", quietly = TRUE)) {
+        options(shiny.useragg = TRUE)
+      } else if (.Platform$OS.type == "windows") {
+        tryCatch(grDevices::windowsFonts(Poppins = grDevices::windowsFont("Poppins")),
+                 error = function(e) { klar <<- "sans" })
+      }
+    } else if (requireNamespace("showtext", quietly = TRUE) && requireNamespace("sysfonts", quietly = TRUE)) {
+      reg <- file.path("fonts", "Poppins-Regular.ttf")
+      fet <- file.path("fonts", "Poppins-Bold.ttf")
+      ok <- tryCatch({
+        if (file.exists(reg)) {
+          sysfonts::font_add("Poppins", regular = reg, bold = if (file.exists(fet)) fet else reg)
+        } else {
+          sysfonts::font_add_google("Poppins", "Poppins")
+        }
+        TRUE
+      }, error = function(e) { message("Poppins kunde inte laddas för cirkeldiagrammet: ", conditionMessage(e)); FALSE })
+      if (ok) {
+        showtext::showtext_opts(dpi = 96)   # samma upplösning som renderPlot(res = 96)
+        showtext::showtext_auto()
+        klar <<- "Poppins"
+      }
+    }
+    klar
+  }
+})
+tema_app <- function() ggplot2::theme_minimal(base_size = 12, base_family = if (poppins_finns) "Poppins" else "")
+# girafe med Poppins som typsnitt när det finns (och när ggiraph-versionen har argumentet fonts)
+girafe_alt <- function(...) {
+  if (poppins_finns && "fonts" %in% names(formals(girafe))) {
+    girafe(..., fonts = list(sans = "Poppins"))
+  } else girafe(...)
+}
 
 #---- Validering ----------------------------------------------------------------
 
@@ -144,7 +234,7 @@ validera_tabell <- function(df, namn, giltiga_omraden = NULL) {
   if ("kon" %in% names(df) && !all(df$kon %in% c("Kvinnor", "Män", "Totalt"))) {
     fel("okända könsvärden")
   }
-  if (!is.null(giltiga_omraden) && any(!df$omrade %in% giltiga_omraden)) {
+  if (!is.null(giltiga_omraden) && any(!df$omrade %in% c(giltiga_omraden, "(alla)"))) {
     fel("innehåller områden som saknas i omraden")
   }
   invisible(df)
@@ -186,11 +276,94 @@ forbered_flytt_alder <- function(df) {
 }
 
 # Gör om en tabell från databasen (gemena kolumnnamn) till appens kontrakt.
+# Flytt över flera år: en rad per år och område. Befolkningen anges som kolumnerna man och
+# kvinnor (befolkning = man + kvinnor räknas ut om kolumnen saknas). Inflyttade och utflyttade
+# har ingen uppdelning på kön. Böjningsformer av kolumnnamnen godtas. Har tabellen fler
+# uppdelningar (t.ex. åldersgrupp) används raden för totalt om den finns, annars summeras den.
+forbered_flytt_serie <- function(df) {
+  byt <- c(inflyttade = "inflyttad", utflyttade = "utflyttad", invanare = "befolkning",
+           folkmangd = "befolkning", befolkning_totalt = "befolkning",
+           män = "man", kvinna = "kvinnor")
+  traff <- names(df) %in% names(byt)
+  names(df)[traff] <- unname(byt[names(df)[traff]])
+  if (!all(c("ar", "omrade") %in% names(df))) return(df)
+  tal <- intersect(c("man", "kvinnor", "befolkning", "inflyttad", "utflyttad", "flyttnetto"), names(df))
+  for (kol in tal) df[[kol]] <- suppressWarnings(as.numeric(df[[kol]]))
+  # Övriga textkolumner är extra uppdelningar. Raden för totalt används om den finns.
+  extra <- setdiff(names(df)[vapply(df, function(x) is.character(x) || is.factor(x), logical(1))],
+                   c("ar", "omrade"))
+  for (e in extra) {
+    v <- tolower(trimws(as.character(df[[e]])))
+    tot <- v %in% c("totalt", "total", "alla", "samtliga", "summa", "totalt alla")
+    if (any(tot)) df <- df[tot, , drop = FALSE]
+  }
+  if ("kon" %in% names(df)) df$kon <- NULL
+  nyckel <- c("ar", "omrade")
+  if (length(tal) && anyDuplicated(df[nyckel])) {
+    df <- stats::aggregate(df[tal], df[nyckel], function(x) summa_na(x))
+  }
+  if (!"befolkning" %in% names(df) && all(c("man", "kvinnor") %in% names(df))) {
+    df$befolkning <- ifelse(is.na(df$man) & is.na(df$kvinnor), NA_real_,
+                            rowSums(df[c("man", "kvinnor")], na.rm = TRUE))
+  }
+  if (!"flyttnetto" %in% names(df) && all(c("inflyttad", "utflyttad") %in% names(df))) {
+    df$flyttnetto <- df$inflyttad - df$utflyttad
+  }
+  df
+}
+
+# De största pendlingsriktningarna. Kolumnerna identifieras på namn:
+#  - kommun: kod (fyra siffror) eller namn, t.ex. kommun, kommunkod, till_kommun, arbetskommun, riktning
+#  - antal: antal, pendlare, utpendlare
+#  - rang: rang, rank, plats (saknas den rangordnas raderna efter antal)
+# Resultatet har kolumnerna ar, omrade, rang, kommunkod, kommunnamn och antal.
+forbered_riktning <- function(df) {
+  forst <- function(kandidater) { i <- kandidater[kandidater %in% names(df)]; if (length(i)) i[1] else NA_character_ }
+  if (!"ar" %in% names(df)) return(df)
+  # Saknas kolumn för distrikt gäller tabellen hela regionen: samma riktningar visas för alla
+  # distrikt (markeras med omrade = "(alla)" och förklaras i kartkortet).
+  if (!"omrade" %in% names(df)) df$omrade <- "(alla)"
+  kol_kommun <- forst(c("kommunkod", "kommun_kod", "kommunkod_tx", "till_kommunkod", "arbkommunkod",
+                        "kommun", "till_kommun", "tillkommun", "mal_kommun", "malkommun", "arbetskommun",
+                        "arbkommun", "kommunnamn", "kommun_namn", "riktning", "destination", "mal"))
+  if (is.na(kol_kommun)) {
+    stop(sprintf("riktning_storst_pendling: hittar ingen kolumn för kommun. Kolumner i tabellen: %s",
+                 paste(names(df), collapse = ", ")), call. = FALSE)
+  }
+  kol_namn <- forst(c("kommunnamn", "kommun_namn", "till_kommun", "arbetskommun", "namn"))
+  kol_antal <- forst(c("antal", "pendlare", "utpendlare", "antal_pendlare", "antal_utpendlare", "utpendling"))
+  kol_rang <- forst(c("rang", "rank", "plats", "ordning", "placering", "nr"))
+  kol_kon <- forst("kon")
+  if (!is.na(kol_kon)) {
+    k <- normalisera_kon(df$kon)
+    if (any(k %in% "Totalt")) df <- df[k %in% "Totalt" | is.na(k), , drop = FALSE]
+  }
+  rakna <- trimws(as.character(df[[kol_kommun]]))
+  ar_kod <- all(grepl("^\\d{3,4}$", rakna[!is.na(rakna)]))
+  ut <- data.frame(ar = df$ar, omrade = df$omrade,
+                   kommunkod = if (ar_kod) sprintf("%04d", suppressWarnings(as.integer(rakna))) else NA_character_,
+                   kommunnamn = if (ar_kod) {
+                     if (!is.na(kol_namn) && kol_namn != kol_kommun) as.character(df[[kol_namn]]) else NA_character_
+                   } else rakna,
+                   antal = if (!is.na(kol_antal)) suppressWarnings(as.numeric(df[[kol_antal]])) else NA_real_,
+                   stringsAsFactors = FALSE)
+  ut$rang <- if (!is.na(kol_rang)) suppressWarnings(as.integer(df[[kol_rang]])) else NA_integer_
+  if (anyNA(ut$rang)) {
+    # Rangordna efter antal (störst först), annars efter radordning, inom år och distrikt
+    ordn <- order(ut$ar, ut$omrade, -ifelse(is.na(ut$antal), -Inf, ut$antal))
+    ut <- ut[ordn, , drop = FALSE]
+    ut$rang <- stats::ave(seq_len(nrow(ut)), ut$ar, ut$omrade, FUN = seq_along)
+  }
+  ut[c("ar", "omrade", "rang", "kommunkod", "kommunnamn", "antal")]
+}
+
 normalisera_tabell <- function(df, namn) {
   k <- tabellkontrakt[[namn]]
   df <- as.data.frame(df, stringsAsFactors = FALSE)
   names(df) <- tolower(names(df))
   if (namn == "flytt_alder") df <- forbered_flytt_alder(df)
+  if (namn == "flytt_serie_ar") df <- forbered_flytt_serie(df)
+  if (namn == "riktning_storst_pendling") df <- forbered_riktning(df)
   saknas <- setdiff(k$nyckel, names(df))
   if (length(saknas)) {
     stop(sprintf("%s: saknar nyckelkolumner %s. Kolumner i tabellen: %s", namn,
@@ -231,6 +404,10 @@ normalisera_tabell <- function(df, namn) {
     df$andel <- ifelse(df$tot_hus > 0, df$antal_hus / df$tot_hus, NA_real_)
   }
   matt <- if (is.null(k$matt)) setdiff(names(df), k$nyckel) else k$matt
+  # Flytt över flera år: befolkning krävs, övriga flyttmått behålls om de finns
+  if (namn == "flytt_serie_ar") {
+    matt <- union("befolkning", intersect(c("man", "kvinnor", "inflyttad", "utflyttad", "flyttnetto"), names(df)))
+  }
   saknas_matt <- setdiff(matt, names(df))
   if (length(saknas_matt)) {
     stop(sprintf("%s: saknar mått %s. Kolumner i tabellen: %s", namn,
@@ -246,7 +423,9 @@ normalisera_tabell <- function(df, namn) {
                  namn, paste(names(d), unlist(d), sep = "=", collapse = ", "),
                  if (length(extra)) paste(extra, collapse = ", ") else "inga"), call. = FALSE)
   }
-  df <- df[c(k$nyckel, matt)]
+  # Riktningstabellen behåller kommunkod och kommunnamn (text) utöver nyckel och mått
+  behall <- if (namn == "riktning_storst_pendling") c("kommunkod", "kommunnamn") else character()
+  df <- df[c(k$nyckel, behall, matt)]
   for (kol in matt) df[[kol]] <- till_tal(df[[kol]], kol, namn)
   df
 }
@@ -268,7 +447,180 @@ hamta_fem_tabeller <- function(las, inst) {
     })
     tabeller[namn] <- list(resultat)
   }
+  # Kommuntabellen för bilar ligger utanför kontraktet (ingen omrade-kolumn)
+  tabeller["bilar_kommun"] <- list(tryCatch(
+    forbered_bilar_kommun(las(inst$tabeller$bilar_kommun %||% "bilar_kommun")),
+    error = function(e) {
+      message("Tabellen bilar_kommun kunde inte läsas: ", conditionMessage(e))
+      fel[["bilar_kommun"]] <<- conditionMessage(e)
+      NULL
+    }))
   list(tabeller = tabeller, fel = fel)
+}
+
+# Tabell med könen som kolumngrupper bredvid varandra: en rubrikrad med Kvinnor och Män (colspan)
+# och under den delkolumnerna (t.ex. år), med samma rader för båda könen.
+#  rader   : data.frame med radetiketter (en rad per tabellrad), t.ex. Mått eller Åldersgrupp
+#  grupper : namngiven lista, ett data.frame per grupp (kön) med lika många rader som `rader`;
+#            kolumnnamnen (t.ex. år) blir delkolumner och ska vara lika i alla grupper
+#  markera : delkolumner som får markeringsfärg (t.ex. valt år)
+#  fet_rad : c(kolumn, värde): rader där kolumnen har värdet visas med fet text (t.ex. Totalt)
+grupperad_tabell <- function(rader, grupper, decimaler = 0, markera = character(),
+                             fet_rad = NULL, ...) {
+  delnamn <- names(grupper[[1]])
+  vardekol <- unlist(lapply(names(grupper), function(g) paste(g, delnamn, sep = "||")))
+  vard <- do.call(cbind, lapply(names(grupper), function(g) {
+    x <- as.data.frame(grupper[[g]], check.names = FALSE)
+    setNames(x, paste(g, names(x), sep = "||"))
+  }))
+  df <- cbind(as.data.frame(rader, check.names = FALSE, stringsAsFactors = FALSE), vard)
+  n_rad <- ncol(as.data.frame(rader))
+  starter <- n_rad + (seq_along(grupper) - 1) * length(delnamn)   # 0-baserade kolumner där en grupp börjar
+  th <- htmltools::tags$th
+  rubrik1 <- htmltools::tags$tr(
+    lapply(names(rader), function(n) th(rowspan = 2, gsub("_", " ", n))),
+    lapply(seq_along(grupper), function(i)
+      th(colspan = length(delnamn), class = "dt-center grupp-start", names(grupper)[i])))
+  rubrik2 <- htmltools::tags$tr(
+    lapply(seq_along(vardekol), function(i)
+      th(delnamn[(i - 1) %% length(delnamn) + 1],
+         class = if ((i - 1) %% length(delnamn) == 0) "grupp-start" else NULL)))
+  container <- htmltools::tags$table(class = "display", htmltools::tags$thead(rubrik1, rubrik2))
+  tillval <- dt_alt(...)
+  tillval$columnDefs <- list(list(className = "grupp-start", targets = as.list(starter)))
+  dt <- DT::datatable(df, container = container, rownames = FALSE, escape = TRUE, options = tillval)
+  dt <- DT::formatRound(dt, vardekol, digits = decimaler, mark = " ", dec.mark = ",")
+  for (k in vardekol[sub("^.*\\|\\|", "", vardekol) %in% markera]) {
+    dt <- DT::formatStyle(dt, k, backgroundColor = rd_farg$mark)
+  }
+  if (!is.null(fet_rad)) {
+    dt <- DT::formatStyle(dt, fet_rad[1], target = "row",
+                          fontWeight = DT::styleEqual(fet_rad[2], "bold"))
+  }
+  dt
+}
+
+#---- Bilinnehav -----------------------------------------------------------------
+# Drivmedel i tabellerna bilar_distrikt och bilar_kommun (kolumnerna heter personbilar_<nyckel>).
+bilar_drivmedel <- c(bensin = "Bensin", diesel = "Diesel", etanol = "Etanol", gas = "Gas",
+                     elhybrid = "Elhybrid", laddhybrid = "Laddhybrid", el = "El", ovriga = "Övriga")
+bilar_kolumner <- paste0("personbilar_", names(bilar_drivmedel))
+# Fossila drivmedel i grått, eldrivna i stilmallens blå toner
+bilar_farger <- c(Bensin = "#424242", Diesel = "#969696", Etanol = "#c9c9c9", Gas = "#96cfc0",
+                  Elhybrid = "#54a1bd", Laddhybrid = "#8edded", El = "#0f7090", Övriga = "#e6e6e6")
+# Mått att jämföra (andel av alla personbilar, procent)
+bilar_matt <- c("El (helt eldrivna)" = "el", "Laddbara (el och laddhybrid)" = "laddbara",
+                "Elektrifierade (el, elhybrid och laddhybrid)" = "elektrifierade",
+                "Bensin" = "bensin", "Diesel" = "diesel")
+bilar_matt_kolumner <- list(el = "el", laddbara = c("el", "laddhybrid"),
+                            elektrifierade = c("el", "elhybrid", "laddhybrid"),
+                            bensin = "bensin", diesel = "diesel")
+
+# Andel (procent) av alla personbilar för ett mått. Saknad total ger NA.
+bilar_andel <- function(df, matt) {
+  kol <- intersect(paste0("personbilar_", bilar_matt_kolumner[[matt]]), names(df))
+  alla <- intersect(bilar_kolumner, names(df))
+  tot <- rowSums(df[alla], na.rm = TRUE)
+  ifelse(tot > 0, rowSums(df[kol], na.rm = TRUE) / tot * 100, NA_real_)
+}
+
+# Kommun för demodistrikten (två kommuner). För riktiga distrikt säger koden inget om kommunen;
+# där hämtas kommunkoden ur kartans geometri (se hamta_appdata_db, kolumnen kommunkod i omraden).
+kommun_for_distrikt <- function(omrade) {
+  ifelse(grepl("^demo_\\d+$", omrade),
+         ifelse(suppressWarnings(as.integer(sub("demo_", "", omrade))) <= 4, "Exempelkommun A", "Exempelkommun B"),
+         NA_character_)
+}
+
+# Tabellen bilar_kommun har kommun (kod eller namn) i stället för omrade, så den ligger utanför
+# tabellkontraktet och kontrolleras här. Kommunkolumnen kan också innehålla län och riket.
+forbered_bilar_kommun <- function(df) {
+  df <- as.data.frame(df, stringsAsFactors = FALSE)
+  names(df) <- tolower(names(df))
+  if (!all(c("ar", "kommun") %in% names(df))) {
+    stop(sprintf("bilar_kommun: saknar ar eller kommun. Kolumner i tabellen: %s",
+                 paste(names(df), collapse = ", ")), call. = FALSE)
+  }
+  kol <- intersect(bilar_kolumner, names(df))
+  if (!length(kol)) {
+    stop(sprintf("bilar_kommun: hittar inga personbilar_-kolumner. Kolumner i tabellen: %s",
+                 paste(names(df), collapse = ", ")), call. = FALSE)
+  }
+  df$ar <- as.integer(df$ar)
+  df$kommun <- trimws(as.character(df$kommun))
+  df <- df[!is.na(df$ar) & !is.na(df$kommun) & nzchar(df$kommun), , drop = FALSE]
+  for (k in kol) df[[k]] <- till_tal(df[[k]], k, "bilar_kommun")
+  if (anyDuplicated(df[c("ar", "kommun")])) {
+    stop("bilar_kommun: dubbla rader för samma år och kommun.", call. = FALSE)
+  }
+  if (any(unlist(df[kol]) < 0, na.rm = TRUE)) stop("bilar_kommun: negativa antal.", call. = FALSE)
+  df[c("ar", "kommun", kol)]
+}
+
+#---- Färger för näringsgrenar (ur Bransch_Gxx_farger.xlsx) ----------------------------
+# 15 branschgrupper (G01–G15) plus Okänt. Flera näringsgrenar ingår i samma grupp (t.ex. B+C) och
+# får då gruppens färg; den andra och följande näringsgrenen i en grupp får samma färg
+# blandad med vitt, så att intilliggande staplar går att skilja åt.
+bransch_grupper <- data.frame(
+  brkod = c("G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G12", "G13", "G14", "G15", "G99"),
+  br15kod = c("A", "B+C", "D+E", "F", "G", "H", "I", "J", "K", "L", "M+N", "O", "P", "Q", "R+S+T+U", "US"),
+  bransch = c("Jord- och skogsbruk", "Tillverkning och utvinning", "Energi och miljö", "Bygg", "Handel",
+              "Transport", "Hotell och restaurang", "IT och kommunikation", "Finans och försäkring", "Fastighet",
+              "Företagstjänster", "Offentlig förvaltning", "Utbildning", "Vård och omsorg",
+              "Kultur, fritid och nöje", "Okänt"),
+  hex = c("#87f7b4", "#36e60a", "#10d0fa", "#eb12c8", "#f1fa86", "#366631", "#faff01", "#b1dfed",
+          "#0000ff", "#ec9eed", "#94bf69", "#fcac34", "#8f0e25", "#f5370d", "#660080", "#ebe2e2"),
+  stringsAsFactors = FALSE
+)
+# Näringsgrenens namn (SNI 2007-avdelning) -> grupp och plats i gruppen. Mönstren prövas i ordning;
+# . står för å, ä och ö så att kodningen inte spelar roll.
+bransch_regler <- data.frame(
+  monster = c("ok.nd|ok.nt|^okant|uppgift saknas", "vattenf.rs.rjning|avfall", "f.rs.rjning av el|el, gas",
+              "utvinning", "tillverkning", "jordbruk|skogsbruk", "bygg", "^handel", "transport", "hotell",
+              "information|kommunikation", "finans", "^fastighetsverksamhet|^fastighet$", "juridik|ekonomi, vetenskap",
+              "uthyrning", "offentlig", "^utbildning", "v.rd och omsorg", "kultur", "annan serviceverksamhet",
+              "hush.ll", "internationella|ambassader"),
+  brkod = c("G99", "G03", "G03", "G02", "G02", "G01", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11",
+            "G11", "G12", "G13", "G14", "G15", "G15", "G15", "G15"),
+  medlem = c(1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 3, 4),
+  stringsAsFactors = FALSE
+)
+# SNI-bokstav (A–U) -> grupp och plats, om näringsgrenarna anges med kod i stället för namn
+bransch_bokstav <- data.frame(
+  bokstav = LETTERS[1:21],
+  brkod = c("G01", "G02", "G02", "G03", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G11",
+            "G12", "G13", "G14", "G15", "G15", "G15", "G15"),
+  medlem = c(1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 3, 4),
+  stringsAsFactors = FALSE
+)
+# Färg för varje namn i `rader`; NA för namn som inte går att koppla till en grupp.
+bransch_farg_for <- function(rader) {
+  x <- tolower(trimws(as.character(rader)))
+  grupp <- rep(NA_character_, length(x)); medlem <- rep(NA_real_, length(x))
+  for (i in seq_along(x)) {
+    if (is.na(x[i])) next
+    if (grepl("^g\\d\\d$", x[i]) && toupper(x[i]) %in% bransch_grupper$brkod) {
+      grupp[i] <- toupper(x[i]); medlem[i] <- 1; next
+    }
+    if (grepl("^[a-u]$", x[i])) {
+      j <- match(toupper(x[i]), bransch_bokstav$bokstav)
+      grupp[i] <- bransch_bokstav$brkod[j]; medlem[i] <- bransch_bokstav$medlem[j]; next
+    }
+    for (j in seq_len(nrow(bransch_regler))) {
+      if (grepl(bransch_regler$monster[j], x[i], perl = FALSE)) {
+        grupp[i] <- bransch_regler$brkod[j]; medlem[i] <- bransch_regler$medlem[j]; break
+      }
+    }
+  }
+  hex <- bransch_grupper$hex[match(grupp, bransch_grupper$brkod)]
+  andel_vitt <- c(0, 0.35, 0.55, 0.7)[pmin(medlem, 4)]
+  ut <- vapply(seq_along(hex), function(i) {
+    if (is.na(hex[i])) return(NA_character_)
+    rgb <- grDevices::col2rgb(hex[i])[, 1]
+    m <- round(rgb + (255 - rgb) * andel_vitt[i])
+    grDevices::rgb(m[1], m[2], m[3], maxColorValue = 255)
+  }, character(1))
+  setNames(ut, rader)
 }
 
 #---- Exempeldata -----------------------------------------------------------------
@@ -379,8 +731,78 @@ skapa_exempeltabeller <- function(omraden) {
                                    match(flytt_alder$aldersgrupp, flytt_ag)), ]
   rownames(flytt_alder) <- NULL
 
+  # Längre serie för befolkning och flytt (2012-2024)
+  serie <- expand.grid(ar = 2012:2024, omrade = omraden$omrade, stringsAsFactors = FALSE)
+  si <- match(serie$omrade, omraden$omrade); st <- serie$ar - 2020
+  tot_bef <- 800 + si * 240 + st * (si * 9 - 30)
+  serie$man <- round(tot_bef * 0.51)
+  serie$kvinnor <- tot_bef - serie$man
+  serie$befolkning <- serie$man + serie$kvinnor
+  serie$inflyttad <- 40 + si * 8 + st * 3
+  serie$utflyttad <- 60 + si * 3 + st * 2
+  serie <- serie[order(serie$ar, serie$omrade), ]
+  rownames(serie) <- NULL
+
+  # De största pendlingsriktningarna (kommunnamn i demot)
+  riktning <- do.call(rbind, lapply(1:3, function(r) data.frame(
+    ar = rutnat$ar, omrade = rutnat$omrade, rang = r,
+    kommunnamn = c("Falun", "Borlänge", "Avesta")[(rutnat$i + r - 2) %% 3 + 1],
+    antal = round((120 - r * 30) + rutnat$i * 4 + rutnat$t * 2), stringsAsFactors = FALSE)))
+  riktning$kommunkod <- NA_character_
+  riktning <- riktning[order(riktning$ar, riktning$omrade, riktning$rang),
+                       c("ar", "omrade", "rang", "kommunkod", "kommunnamn", "antal")]
+  rownames(riktning) <- NULL
+
+  # Pendling: bred tabell per kön, som i databasen (Totalt är summan av Kvinnor och Män)
+  pend_kon <- function(andel, kon) data.frame(
+    ar = rutnat$ar, omrade = rutnat$omrade, kon = kon,
+    borarbetar = round((400 + rutnat$i * 20 + rutnat$t * 4) * andel),
+    utpendling = round((90 + rutnat$i * 5 + rutnat$t * 4) * andel),
+    inpendling = round((60 + rutnat$i * 6 + rutnat$t * 4) * andel),
+    stringsAsFactors = FALSE)
+  pendling <- rbind(pend_kon(0.52, "Män"), pend_kon(0.48, "Kvinnor"))
+  pendling$dagbef <- pendling$borarbetar + pendling$inpendling
+  pendling$nattbef <- pendling$borarbetar + pendling$utpendling
+  pendling$uppgift_arb_saknas <- round(pendling$nattbef * 0.1)
+  tot <- aggregate(cbind(borarbetar, utpendling, inpendling, dagbef, nattbef, uppgift_arb_saknas) ~ ar + omrade,
+                   data = pendling, FUN = sum)
+  pendling <- rbind(pendling, cbind(tot[c("ar", "omrade")], kon = "Totalt",
+                                    tot[setdiff(names(tot), c("ar", "omrade"))])[names(pendling)])
+  pendling <- pendling[order(pendling$ar, pendling$omrade, match(pendling$kon, c("Totalt", "Män", "Kvinnor"))), ]
+  rownames(pendling) <- NULL
+
+
+  # Personbilar per drivmedel: elbilar och laddhybrider ökar över tiden
+  bil_tot <- 500 + rutnat$i * 120 + rutnat$t * 10
+  andelar <- cbind(bensin = 0.60 - 0.04 * rutnat$t, diesel = 0.30 - 0.035 * rutnat$t,
+                   etanol = 0.005, gas = 0.003, elhybrid = 0.02 + 0.01 * rutnat$t,
+                   laddhybrid = 0.015 + 0.012 * rutnat$t + 0.002 * rutnat$i,
+                   el = 0.01 + 0.015 * rutnat$t + 0.003 * rutnat$i)
+  antal_bil <- round(bil_tot * andelar)
+  bilar_distrikt <- data.frame(ar = rutnat$ar, omrade = rutnat$omrade, antal_bil,
+                               stringsAsFactors = FALSE)
+  bilar_distrikt$ovriga <- pmax(bil_tot - rowSums(antal_bil), 0)
+  names(bilar_distrikt)[3:10] <- paste0("personbilar_", c(colnames(andelar), "ovriga"))
+  bilar_distrikt <- bilar_distrikt[order(bilar_distrikt$ar, bilar_distrikt$omrade), ]
+  rownames(bilar_distrikt) <- NULL
+  # Kommuner (två i demot) med län och riket som jämförelse
+  bk <- bilar_distrikt
+  bk$kommun <- kommun_for_distrikt(bk$omrade)
+  kol_bil <- grep("^personbilar_", names(bk), value = TRUE)
+  bilar_kommun <- aggregate(bk[kol_bil], by = list(ar = bk$ar, kommun = bk$kommun), FUN = sum)
+  lan <- aggregate(bk[kol_bil], by = list(ar = bk$ar), FUN = sum)
+  lan$kommun <- "Dalarnas län"
+  riket <- lan
+  riket$kommun <- "Riket"
+  riket[kol_bil] <- round(riket[kol_bil] * 40)
+  bilar_kommun <- rbind(bilar_kommun, lan[names(bilar_kommun)], riket[names(bilar_kommun)])
+  bilar_kommun <- bilar_kommun[order(bilar_kommun$ar, bilar_kommun$kommun), ]
+  rownames(bilar_kommun) <- NULL
+
   list(inkomst = inkomst, flytt_alder = flytt_alder, hushall_inkomst = hushall, ekonomisk_standard = ek,
-       sysselsattning_alder = syss_alder, sysselsattning_kon = syss_kon,
+       sysselsattning_alder = syss_alder, sysselsattning_kon = syss_kon, pendling = pendling,
+       flytt_serie_ar = serie, riktning_storst_pendling = riktning,
+       bilar_distrikt = bilar_distrikt, bilar_kommun = bilar_kommun,
        tabellfel = character())
 }
 
@@ -395,6 +817,7 @@ skapa_exempeldata <- function() {
     omrade = sprintf("demo_%02d", 1:8),
     namn = paste("Exempeldistrikt", LETTERS[1:8])
   )
+  omraden$kommunkod <- kommun_for_distrikt(omraden$omrade)
   flytt <- expand.grid(
     ar = 2020:2024, omrade = omraden$omrade,
     stringsAsFactors = FALSE
@@ -521,13 +944,22 @@ ale_inst <- list(
   db_user_sek = "shiny_las_sekretess",            # KONTROLLERA: läsanvändare för sekretess
   db_name_geo = "geodata",                        # databasen med kartor (schema karta)
   schema = "ale",
+  # Distriktskoder som ska finnas med trots att deras geometri saknas i länets distrikt, t.ex. ett
+  # distrikt vars kod finns i två län i karta.distrikt (214046 ligger där bara under länskod 18).
+  # De får data men ingen polygon i kartorna (geometrin från ett annat län ska inte ritas).
+  extra_distrikt = c("214046"),
   tabell_flytt = "flytt_sum",
   tabell_utbildning = "utbildning",
   tabeller = list(                      # tabellnamn i schemat ale
     inkomst = "inkomst", flytt_alder = "flytt_alder", hushall_inkomst = "hushall_inkomst",
     ekonomisk_standard = "ekonomisk_standard",
     sysselsattning_alder = "sysselsattning_alder",
-    sysselsattning_kon = "sysselsattning_kon"
+    sysselsattning_kon = "sysselsattning_kon",
+    pendling = "pendling",
+    riktning_storst_pendling = "riktning_storst_pendling",
+    flytt_serie_ar = "flytt_serie_ar",
+    bilar_distrikt = "bilar_distrikt",
+    bilar_kommun = "bilar_kommun"
   ),
   lanskod = "20"
 )
@@ -539,6 +971,30 @@ intern_kol <- function(df, monster, tabell) {
                  monster, tabell, paste(names(df), collapse = ", ")), call. = FALSE)
   }
   traff[1]
+}
+
+# Kommungeometrin behåller kommunkod (fyra siffror) och kommunnamn när kolumnerna kan identifieras,
+# så att pendlingsriktningar kan kopplas till kommuner på kartan.
+forbered_kommungeometri <- function(geo) {
+  nm <- names(geo)
+  kod_kol <- grep("^(kommunkod|kommun_kod|kommunkod_tx|knkod|kn_kod|kommunid|kommun_id|kod)$", nm,
+                  ignore.case = TRUE, value = TRUE)[1]
+  if (is.na(kod_kol)) {
+    # Annars: första textkolumn där alla värden är fyra siffror som börjar på länskoden
+    for (k in setdiff(nm, attr(geo, "sf_column"))) {
+      v <- as.character(geo[[k]])
+      if (all(grepl("^20\\d{2}$", v[!is.na(v)])) && any(!is.na(v))) { kod_kol <- k; break }
+    }
+  }
+  namn_kol <- grep("^(kommunnamn|kommun_namn|knnamn|namn|name|kommun)$", setdiff(nm, kod_kol),
+                   ignore.case = TRUE, value = TRUE)[1]
+  message("Kommungeometri: kod = ", if (is.na(kod_kol)) "saknas" else kod_kol,
+          ", namn = ", if (is.na(namn_kol)) "saknas" else namn_kol)
+  ut <- sf::st_sf(
+    kommunkod = if (is.na(kod_kol)) NA_character_ else sprintf("%04d", suppressWarnings(as.integer(as.character(geo[[kod_kol]])))),
+    kommunnamn = if (is.na(namn_kol)) NA_character_ else as.character(geo[[namn_kol]]),
+    geometry = sf::st_geometry(geo))
+  sf::st_make_valid(ut)
 }
 
 hamta_appdata_db <- function(inst = ale_inst) {
@@ -606,26 +1062,96 @@ hamta_appdata_db <- function(inst = ale_inst) {
                                          query = paste0("WHERE lanskod_tx = '", inst$lanskod, "'")),
     error = function(e) { message("Kommungeometri: ", conditionMessage(e)); NULL })
 
+  # Distriktslistan byggs av de tabeller som definierar distrikten. bilar_distrikt ingår inte:
+  # den kan innehålla koder utanför Dalarna (exklaver som ligger under en annan kommun), och
+  # sådana rader ignoreras nedan i stället för att ge distrikt utan geometri.
   koder <- sort(unique(c(flytt$omrade, utb$omrade,
-                         unlist(lapply(tab$tabeller, function(d) d$omrade), use.names = FALSE))))
+                         unlist(lapply(tab$tabeller[setdiff(names(tab$tabeller), "bilar_distrikt")],
+                                       function(d) d$omrade), use.names = FALSE))))
+  extra <- character(0)
+  if (!is.null(tab$tabeller$bilar_distrikt)) {
+    bd <- tab$tabeller$bilar_distrikt
+    # Ett distrikt som finns i länets geometri men saknas i de andra tabellerna (t.ex. för att det
+    # saknar rader där) ska ändå få behålla sina bilrader. Bara koder som varken finns bland
+    # distrikten eller i länets geometri räknas som "utanför".
+    geo_koder <- if (is.null(geo_distrikt)) character(0) else as.character(geo_distrikt$distriktskod)
+    nya <- setdiff(intersect(unique(bd$omrade), geo_koder), c(koder, "(alla)"))
+    if (length(nya)) {
+      message("bilar_distrikt: ", length(nya), " distrikt finns i geometrin men saknas i övriga tabeller ",
+              "och läggs till (t.ex. ", paste(head(nya, 3), collapse = ", "), ").")
+      koder <- sort(c(koder, nya))
+    }
+    extra <- intersect(as.character(inst$extra_distrikt), unique(as.character(bd$omrade)))
+    extra <- setdiff(extra, c(koder, "(alla)"))
+    if (length(extra)) {
+      message("bilar_distrikt: distrikt ", paste(extra, collapse = ", "),
+              " läggs till utan geometri (inst$extra_distrikt).")
+      koder <- sort(c(koder, extra))
+    }
+    utanfor <- !bd$omrade %in% koder
+    if (any(utanfor) && !is.null(con_geo)) {
+      # Felsökning: finns de utelämnade koderna alls i distriktstabellen, och vilket län har de då?
+      sok <- unique(as.character(bd$omrade[utanfor]))
+      fyll <- tryCatch(
+        rdgis::postgis_postgistabell_till_sf(con_geo, "karta", "distrikt",
+                                             query = paste0("WHERE distriktskod IN ('", paste(sok, collapse = "','"), "')")),
+        error = function(e) NULL)
+      if (is.null(fyll) || nrow(fyll) == 0) {
+        message("Felsökning: ingen av koderna ", paste(head(sok, 5), collapse = ", "),
+                " finns i karta.distrikt (kolumnen distriktskod).")
+      } else {
+        lk <- intersect(c("lankod", "lankod_tx", "lan_kod"), names(fyll))
+        message("Felsökning: ", nrow(fyll), " av koderna finns i karta.distrikt med ",
+                if (length(lk)) paste0(lk[1], " = ", paste(unique(fyll[[lk[1]]]), collapse = "/"), " (appen filtrerar på ", inst$lanskod, ")")
+                else "okänd länskolumn", ".")
+      }
+    }
+    if (any(utanfor)) {
+      message("bilar_distrikt: ", sum(utanfor), " rader med ", length(unique(bd$omrade[utanfor])),
+              " distriktskoder som saknas bland distrikten utelämnas (t.ex. ",
+              paste(head(unique(bd$omrade[utanfor]), 3), collapse = ", "), ").")
+      tab$tabeller$bilar_distrikt <- bd[!utanfor, , drop = FALSE]
+    }
+  }
+  # "(alla)" är en markör för tabeller utan distriktskolumn (riktning_storst_pendling), inget distrikt
+  koder <- setdiff(koder, "(alla)")
   namn <- koder
+  kommunkod <- rep(NA_character_, length(koder))
   if (!is.null(geo_distrikt)) {
     geo_distrikt$omrade <- as.character(geo_distrikt$distriktskod)
+    # Kommunkod per distrikt: ur en kolumn i distriktsgeometrin om det finns en (före beskärningen nedan)
+    kk <- grep("^(kommunkod|kommun_kod|kommunkod_tx|knkod|kn_kod|kommunid|kommun_id)$", names(geo_distrikt),
+               ignore.case = TRUE, value = TRUE)[1]
+    if (!is.na(kk)) {
+      kv <- sprintf("%04d", suppressWarnings(as.integer(as.character(geo_distrikt[[kk]]))))
+      kommunkod <- kv[match(koder, geo_distrikt$omrade)]
+    }
     nk <- grep("^(distriktsnamn|distrikt_namn|namn|name)$", names(geo_distrikt),
                ignore.case = TRUE, value = TRUE)
     if (length(nk)) namn <- geo_distrikt[[nk[1]]][match(koder, geo_distrikt$omrade)]
     namn <- ifelse(is.na(namn), paste("Distrikt", koder), as.character(namn))
     geo_distrikt <- sf::st_make_valid(geo_distrikt[geo_distrikt$omrade %in% koder, "omrade"])
-    if (!setequal(geo_distrikt$omrade, koder)) {
+    if (!setequal(geo_distrikt$omrade, setdiff(koder, as.character(inst$extra_distrikt)))) {
       warning("Geometri saknas för vissa distriktskoder – kartan visas inte.")
       geo_distrikt <- NULL
     }
   } else namn <- paste("Distrikt", koder)
-  if (!is.null(geo_kommun)) geo_kommun <- sf::st_make_valid(sf::st_geometry(geo_kommun) |> sf::st_sf())
+  if (!is.null(geo_kommun)) geo_kommun <- forbered_kommungeometri(geo_kommun)
+  # Saknas kommunkod i distriktsgeometrin: placera en punkt i varje distrikt och se vilken kommun den ligger i
+  if (!is.null(geo_distrikt) && !is.null(geo_kommun) && anyNA(kommunkod) && !all(is.na(geo_kommun$kommunkod))) {
+    kommunkod_geo <- tryCatch({
+      pkt <- suppressWarnings(sf::st_point_on_surface(sf::st_transform(geo_distrikt, sf::st_crs(geo_kommun))))
+      j <- sf::st_join(pkt, geo_kommun["kommunkod"], join = sf::st_within)
+      j <- j[!duplicated(j$omrade), ]
+      j$kommunkod[match(koder, j$omrade)]
+    }, error = function(e) { message("Kommunkoppling för distrikt: ", conditionMessage(e)); rep(NA_character_, length(koder)) })
+    kommunkod[is.na(kommunkod)] <- kommunkod_geo[is.na(kommunkod)]
+  }
+  message("Kommunkod hittades för ", sum(!is.na(kommunkod)), " av ", length(koder), " distrikt.")
 
   c(
     list(
-      omraden = data.frame(omrade = koder, namn = namn, stringsAsFactors = FALSE),
+      omraden = data.frame(omrade = koder, namn = namn, kommunkod = kommunkod, stringsAsFactors = FALSE),
       flytt_summering = flytt, utbildning = utb,
       distrikt = geo_distrikt, kommun = geo_kommun, exempeldata = FALSE,
       kalla = "Region Dalarna, Samhällsanalys (databasschema ale)",
@@ -669,12 +1195,18 @@ omradesval <- setNames(
 )
 arval <- sort(unique(c(
   appdata$flytt_summering$ar, appdata$utbildning$ar,
-  unlist(lapply(names(tabellkontrakt), function(n) appdata[[n]]$ar), use.names = FALSE)
+  # bilar_distrikt styr inte årsvalet: ett senare bilår ska inte bli förvalt år för övriga flikar
+  unlist(lapply(setdiff(names(tabellkontrakt), c("flytt_serie_ar", "bilar_distrikt")),
+                function(n) appdata[[n]]$ar), use.names = FALSE)
 )))
 
 # Val och ordning för de nya tabellerna
 inkomstmatt <- c("Medelinkomst" = "medel_ink", "Medianinkomst" = "median_ink")
 blockval <- c("Näringsgren" = "naringsgren", "Sektor" = "sektor", "Totalt" = "totalt")
+# Näringsliv visar bara näringsgren och sektor; totalen hör till Arbetsmarknad
+blockval_syss <- c("Näringsgren" = "naringsgren", "Sektor" = "sektor")
+# Val av totalt eller uppdelat på kön
+visaval <- c("Totalt", "Uppdelat på kön")
 aldersgruppsordning <- if (is.null(appdata$inkomst)) character() else
   sortera_naturligt(appdata$inkomst$aldersgrupp)
 # Åldersgrupperna i sysselsattning_alder är kolumner. Kolumnen totalt (om den finns)
@@ -700,13 +1232,13 @@ skapa_diagram <- function(data, x, y, titel, linje = FALSE) {
       output_mapp = tempdir(), filnamn_diagram = "lokala_ekonomier",
       diagram_titel = titel, diagram_capt = appdata$kalla,
       manual_x_axis_title = NULL, manual_y_axis_title = "Antal",
-      manual_color = "#178571", lagg_pa_logga = FALSE,
+      manual_color = rd_farg$primar, lagg_pa_logga = FALSE,
       skriv_till_diagramfil = FALSE
     ))
   }
   p <- ggplot(data, aes(x = .data[[x]], y = .data[[y]]))
-  p <- if (linje) p + geom_line(aes(group = 1), colour = "#178571") +
-    geom_point(colour = "#178571") else p + geom_col(fill = "#178571")
+  p <- if (linje) p + geom_line(aes(group = 1), colour = rd_farg$primar) +
+    geom_point(colour = rd_farg$primar) else p + geom_col(fill = rd_farg$primar)
   p + theme_minimal(base_size = 12) +
     labs(title = titel, x = NULL, y = "Antal", caption = appdata$kalla)
 }
