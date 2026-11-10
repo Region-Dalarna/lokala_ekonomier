@@ -944,10 +944,6 @@ ale_inst <- list(
   db_user_sek = "shiny_las_sekretess",            # KONTROLLERA: läsanvändare för sekretess
   db_name_geo = "geodata",                        # databasen med kartor (schema karta)
   schema = "ale",
-  # Distriktskoder som ska finnas med trots att deras geometri saknas i länets distrikt, t.ex. ett
-  # distrikt vars kod finns i två län i karta.distrikt (214046 ligger där bara under länskod 18).
-  # De får data men ingen polygon i kartorna (geometrin från ett annat län ska inte ritas).
-  extra_distrikt = c("214046"),
   tabell_flytt = "flytt_sum",
   tabell_utbildning = "utbildning",
   tabeller = list(                      # tabellnamn i schemat ale
@@ -1068,7 +1064,6 @@ hamta_appdata_db <- function(inst = ale_inst) {
   koder <- sort(unique(c(flytt$omrade, utb$omrade,
                          unlist(lapply(tab$tabeller[setdiff(names(tab$tabeller), "bilar_distrikt")],
                                        function(d) d$omrade), use.names = FALSE))))
-  extra <- character(0)
   if (!is.null(tab$tabeller$bilar_distrikt)) {
     bd <- tab$tabeller$bilar_distrikt
     # Ett distrikt som finns i länets geometri men saknas i de andra tabellerna (t.ex. för att det
@@ -1080,13 +1075,6 @@ hamta_appdata_db <- function(inst = ale_inst) {
       message("bilar_distrikt: ", length(nya), " distrikt finns i geometrin men saknas i övriga tabeller ",
               "och läggs till (t.ex. ", paste(head(nya, 3), collapse = ", "), ").")
       koder <- sort(c(koder, nya))
-    }
-    extra <- intersect(as.character(inst$extra_distrikt), unique(as.character(bd$omrade)))
-    extra <- setdiff(extra, c(koder, "(alla)"))
-    if (length(extra)) {
-      message("bilar_distrikt: distrikt ", paste(extra, collapse = ", "),
-              " läggs till utan geometri (inst$extra_distrikt).")
-      koder <- sort(c(koder, extra))
     }
     utanfor <- !bd$omrade %in% koder
     if (any(utanfor) && !is.null(con_geo)) {
@@ -1131,7 +1119,7 @@ hamta_appdata_db <- function(inst = ale_inst) {
     if (length(nk)) namn <- geo_distrikt[[nk[1]]][match(koder, geo_distrikt$omrade)]
     namn <- ifelse(is.na(namn), paste("Distrikt", koder), as.character(namn))
     geo_distrikt <- sf::st_make_valid(geo_distrikt[geo_distrikt$omrade %in% koder, "omrade"])
-    if (!setequal(geo_distrikt$omrade, setdiff(koder, as.character(inst$extra_distrikt)))) {
+    if (!setequal(geo_distrikt$omrade, koder)) {
       warning("Geometri saknas för vissa distriktskoder – kartan visas inte.")
       geo_distrikt <- NULL
     }

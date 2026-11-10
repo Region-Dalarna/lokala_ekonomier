@@ -1406,6 +1406,7 @@ shinyServer(function(input, output, session) {
         spara_bildfil = FALSE, logga = FALSE,
         autoladda_typsnitt = FALSE, font = statisk_font(),
         legend_radbryt = 30, storlek_legend = 10,
+        titel = paste("Sysselsatta per", tolower(blocketikett(input$syss_block))),   # t.ex. "Sysselsatta per sektor"
         diagram_caption = appdata$kalla),
       error = function(e) validate(paste("Cirkeldiagrammet kunde inte ritas:", conditionMessage(e))))
     # Funktionen sorterar legenden alfabetiskt. Här ersätts färgskalan så att förklaringsrutorna
