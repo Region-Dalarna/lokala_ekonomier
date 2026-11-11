@@ -202,9 +202,11 @@ etikettera_rad <- function(x) {
   ifelse(is.na(ut), paste0(toupper(substring(rest, 1, 1)), substring(rest, 2)), ut)
 }
 
+# pageLength 25 är standard (DT:s eget förval är 10); anges pageLength i anropet gäller det.
 dt_alt <- function(...) {
-  c(list(language = list(search = "Sök:", emptyTable = "Inga uppgifter",
-                         zeroRecords = "Inga träffar")), list(...))
+  utg <- list(language = list(search = "Sök:", emptyTable = "Inga uppgifter", zeroRecords = "Inga träffar"),
+              pageLength = 25)
+  modifyList(utg, list(...))
 }
 
 # Tabell med mellanslag som tusentalsavgränsare och kommatecken som decimaltecken.
@@ -241,7 +243,7 @@ poppins_finns <- tryCatch(
   requireNamespace("systemfonts", quietly = TRUE) &&
     any(grepl("^Poppins", systemfonts::system_fonts()$family)),
   error = function(e) FALSE)
-# Poppins för statiska diagram (cirkeldiagrammet ritas som bild i R, inte i webbläsaren, så typsnittet
+# Poppins för statiska diagram (bubbeldiagrammet ritas som bild i R, inte i webbläsaren, så typsnittet
 # måste finnas för R). Ordning: 1) installerat på maskinen, 2) fontfil i appmappen
 # (fonts/Poppins-Regular.ttf, ev. Poppins-Bold.ttf), 3) hämtas från Google Fonts (kräver internet).
 # Returnerar typsnittsnamnet som diagrammet ska använda ("sans" om inget lyckas).
@@ -271,7 +273,7 @@ statisk_font <- local({
           sysfonts::font_add_google("Poppins", "Poppins")
         }
         TRUE
-      }, error = function(e) { message("Poppins kunde inte laddas för cirkeldiagrammet: ", conditionMessage(e)); FALSE })
+      }, error = function(e) { message("Poppins kunde inte laddas för bubbeldiagrammet: ", conditionMessage(e)); FALSE })
       if (ok) {
         showtext::showtext_opts(dpi = 96)   # samma upplösning som renderPlot(res = 96)
         showtext::showtext_auto()

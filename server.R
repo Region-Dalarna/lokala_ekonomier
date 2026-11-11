@@ -559,7 +559,7 @@ shinyServer(function(input, output, session) {
       transmute(Distriktskod = omrade, Distrikt = namn, Värde = varde,
                 `Valt distrikt` = ifelse(valt, "Ja", ""))
     datatable(df, rownames = FALSE, escape = TRUE, selection = "single",
-              options = list(pageLength = 15, order = list(), language = list(
+              options = list(pageLength = 25, order = list(), language = list(
                 search = "Sök:", emptyTable = "Inga uppgifter", zeroRecords = "Inga träffar"
               )))
   }, server = TRUE)
@@ -1577,7 +1577,7 @@ shinyServer(function(input, output, session) {
     girafe_alt(ggobj = p, width_svg = 16, height_svg = max(4.5, 1.6 + 0.52 * nlevels(factor(df$etikett)) * (if (delat(input$vis_syss)) 1.2 else 1)),
                options = giraf_val)
   })
-  # Cirkeldiagram (packed circles) över samma data som staplarna, ritat med skapa_packed_circles()
+  # Bubbeldiagram (packed circles) över samma data som staplarna, ritat med skapa_packed_circles()
   # ur rddiagram. Funktionen returnerar ett statiskt ggplot-objekt (inte girafe), så diagrammet
   # saknar hovringsruta. Filsparning, logga och hämtning av färgnyckel från GitHub stängs av här:
   # färgerna kommer från appens egen färgkodning (samma som staplarna).
@@ -1585,7 +1585,7 @@ shinyServer(function(input, output, session) {
     validate(need(requireNamespace("rddiagram", quietly = TRUE) &&
                     requireNamespace("packcircles", quietly = TRUE) &&
                     requireNamespace("ggforce", quietly = TRUE),
-                  "Cirkeldiagrammet kräver paketen rddiagram, packcircles och ggforce."))
+                  "Bubbeldiagrammet kräver paketen rddiagram, packcircles och ggforce."))
     df <- syss_kon_urval()
     validate(need(nrow(df) > 0, "Sysselsättningsuppgift saknas för valt urval."))
     farger <- farg_for(c(df$etikett, dolt_etikett, delvis_etikett))
@@ -1594,7 +1594,7 @@ shinyServer(function(input, output, session) {
       ut <- rbind(
         data.frame(bransch = df$etikett, antal = df$kvinnor, kon = kon_ordning[1], stringsAsFactors = FALSE),
         data.frame(bransch = df$etikett, antal = df$man, kon = kon_ordning[2], stringsAsFactors = FALSE))
-      # Bortfallet som en egen grå cirkel per kön
+      # Bortfallet som en egen grå bubbla per kön
       if (!is.null(tot)) {
         r_kv <- dolt_rest(tot$kvinnor, df$kvinnor); r_man <- dolt_rest(tot$man, df$man)
         if (is.finite(r_kv)) ut <- rbind(ut, data.frame(bransch = dolt_etikett, antal = r_kv, kon = kon_ordning[1]))
@@ -1623,7 +1623,7 @@ shinyServer(function(input, output, session) {
         legend_radbryt = 30, storlek_legend = 10,
         titel = paste("Sysselsatta per", tolower(blocketikett(input$syss_block))),   # t.ex. "Sysselsatta per sektor"
         diagram_caption = appdata$kalla),
-      error = function(e) validate(paste("Cirkeldiagrammet kunde inte ritas:", conditionMessage(e))))
+      error = function(e) validate(paste("Bubbeldiagrammet kunde inte ritas:", conditionMessage(e))))
     # Funktionen sorterar legenden alfabetiskt. Här ersätts färgskalan så att förklaringsrutorna
     # ligger i storleksordning (störst totalt antal först, kön sammanräknade), med samma
     # färger och radbrytning som i funktionen.

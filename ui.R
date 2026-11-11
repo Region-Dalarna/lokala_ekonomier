@@ -176,10 +176,10 @@ shinyUI(
                                                                          column(4, radioButtons("vis_syss", "Kön", choices = visaval, inline = TRUE))
                                                                        )),
                                                                   fluidRow(
-                                                                    # Tre vyer av samma data; cirkeldiagrammet visas först. Cirklarnas yta är proportionell mot antalet.
+                                                                    # Tre vyer av samma data; bubbeldiagrammet visas först. Bubblornas yta är proportionell mot antalet.
                                                                     column(12, kort("Antal förvärvsarbetande",
                                                                                     tabsetPanel(id = "vy_syss", type = "pills",
-                                                                                                tabPanel("Cirkeldiagram", plotOutput("syss_cirkel_diagram", height = "620px")),
+                                                                                                tabPanel("Bubbeldiagram", plotOutput("syss_cirkel_diagram", height = "620px")),
                                                                                                 tabPanel("Stapeldiagram", girafeOutput("syss_kon_diagram")),
                                                                                                 tabPanel("Tabell", DTOutput("syss_kon_tabell"))),
                                                                                     uiOutput("notis_syss_kon")))
