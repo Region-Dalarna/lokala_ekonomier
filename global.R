@@ -46,7 +46,7 @@ tabellkontrakt <- list(
   inkomst = list(
     nyckel = c("ar", "omrade", "kon", "aldersgrupp"),
     text = c("kon", "aldersgrupp"),
-    matt = c("antal_ind", "median_ink", "summa_ink", "medel_ink"),
+    matt = c("antal_ind", "median_ink", "medel_ink"),
     antal = "antal_ind"
   ),
   # Flyttnetto per åldersgrupp och kön (kan vara negativt). Tabellen kan vara lång (en kolumn
@@ -59,7 +59,7 @@ tabellkontrakt <- list(
   ),
   hushall_inkomst = list(
     nyckel = c("ar", "omrade"), text = character(),
-    matt = c("antal_hus", "summa_ink", "medel_ink", "median_ink"),
+    matt = c("antal_hus", "medel_ink", "median_ink"),
     antal = "antal_hus"
   ),
   ekonomisk_standard = list(
@@ -79,7 +79,8 @@ tabellkontrakt <- list(
   # ar, omrade, man, kvinnor (befolkning räknas ut), inflyttad, utflyttad.
   flytt_serie_ar = list(
     nyckel = c("ar", "omrade"), text = character(), matt = "befolkning",
-    antal = c("befolkning", "man", "kvinnor", "inflyttad", "utflyttad")  # flyttnetto kan vara negativt
+    # Antal som inte får vara negativa. Flyttnetto, födelsenetto och befolkningsförändring kan vara negativa.
+    antal = c("befolkning", "man", "kvinnor", "inflyttad", "utflyttad", "kvarboende", "fodda", "doda")
   ),
   # De största pendlingsriktningarna ut från distriktet: en rad per år, distrikt och rang (1 = störst).
   # Kolumner som känns igen: rang, kommun (kod eller namn), antal. Se forbered_riktning().
@@ -99,6 +100,64 @@ tabellkontrakt <- list(
   )
 )
 
+# Nya tabeller ur pipelinen med röjandegranskning. De ligger i ett eget kontrakt så att de flikar och
+# nedladdningar som går igenom `tabellkontrakt` inte påverkas; tabellerna läses in och finns i appdata,
+# men visas först när en flik byggs för dem. Mått = NULL betyder alla kolumner utom nyckel och flaggor.
+tabellkontrakt_ny <- list(
+  # Civilstånd per kön (en kolumn per civilstånd: ogift, gift, skild ...)
+  flytt_civilstand = list(
+    nyckel = c("ar", "omrade", "kon"), text = "kon", matt = NULL, antal = NULL
+  ),
+  # Sammanräknad förvärvsinkomst per åldersgrupp och kön
+  sammanraknad_forv_inkomst = list(
+    nyckel = c("ar", "omrade", "kon", "aldersgrupp"), text = c("kon", "aldersgrupp"),
+    matt = NULL, antal = "antal_ind"
+  ),
+  # Antal hushåll per hushållsstorlek
+  storlek_hushall = list(
+    nyckel = c("ar", "omrade", "hushallsstorlek"), text = "hushallsstorlek",
+    matt = "storlek_hushall", antal = "storlek_hushall"
+  ),
+  # Företag: arbetsställen per storleksklass, per näringsgren, samt handel och restaurang
+  antal_anstallda = list(
+    nyckel = c("ar", "omrade", "klass"), text = "klass",
+    matt = "antal_arbetsstallen", antal = "antal_arbetsstallen"
+  ),
+  foretag_bransch = list(
+    nyckel = c("ar", "omrade", "bransch"), text = "bransch",
+    matt = c("antal_arbetsstallen", "anstallda"), antal = c("antal_arbetsstallen", "anstallda")
+  ),
+  handel = list(
+    nyckel = c("ar", "omrade", "grupp"), text = "grupp",
+    matt = c("antal_arbetsstallen", "anstallda", "omsattning_tkr"),
+    antal = c("antal_arbetsstallen", "anstallda", "omsattning_tkr")
+  ),
+  # Konsumtionskostnader (Konsumentverket) kopplade på antal personer per åldersklass och hushåll
+  konsumtion_ind = list(
+    nyckel = c("ar", "omrade", "kon", "aldersgrupp"), text = c("kon", "aldersgrupp"),
+    matt = NULL, antal = NULL
+  ),
+  konsumtion_hus = list(
+    nyckel = c("ar", "omrade", "hushallsstorlek"), text = "hushallsstorlek",
+    matt = NULL, antal = NULL
+  )
+)
+alla_kontrakt <- c(tabellkontrakt, tabellkontrakt_ny)
+
+# Flaggkolumner från röjandegranskningen: <mått>_dolt (varför värdet är dolt, då är måttet NA),
+# <mått>_ovre (värdet är en övre gräns, "under x %") och rang_ok (får ingå i rangordning).
+# De läses in men ligger utanför måtten och finns i appdata$flaggor (en data.frame per tabell
+# med nyckelkolumnerna, så att de kan kopplas på med merge). Tabellerna i appdata är oförändrade.
+# Etikett och färg för bortfallet (dolda värden sammanlagt) i diagram över rader
+dolt_etikett <- "Dolda värden"
+dolt_farg <- "#d9d9d9"
+# Totalvyn: rader där bara ena könet är dolt. Radens summa kan inte visas, men det synliga könet
+# kan redovisas som egen post så att bortfallet går ihop med könsvyn.
+delvis_etikett <- "Rader med delvis dolt kön"
+delvis_farg <- "#b5b5b5"
+flaggkolumn <- function(namn) grepl("(_dolt|_ovre)$|^rang_ok$", namn)
+hamta_flaggor <- function(tabell, data = appdata) data$flaggor[[tabell]]
+
 #---- Hjälpfunktioner -----------------------------------------------------------
 
 # Könsvärden i databasen är gemener (man, kvinnor, totalt); appen använder Män/Kvinnor/Totalt.
@@ -115,17 +174,27 @@ normalisera_kon <- function(x) {
 sortera_naturligt <- function(x) {
   x <- unique(as.character(x))
   tal <- suppressWarnings(as.numeric(sub("^\\D*(\\d+).*$", "\\1", x)))
-  x[order(is.na(tal), tal, x)]
+  okand_sist(x[order(is.na(tal), tal, x)])
 }
+# Kategorier som betyder "okänd" eller "uppgift saknas" läggs sist, i övrigt oförändrad ordning.
+ar_okand <- function(x) grepl("^(okänd|okand|uppgift saknas|uppgift_saknas)", tolower(trimws(as.character(x))))
+okand_sist <- function(x) { x <- as.character(x); x[order(ar_okand(x))] }
 
 # Summa som förblir NA om alla värden saknas (saknat är inte noll).
 summa_na <- function(x) if (all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)
+# Strikt summa för tabeller med dolda värden: NA om något värde är NA. En summa av de synliga delarna
+# får inte visas som om den vore hela summan, och den skulle dessutom kunna avslöja ett dolt värde.
+summa_strikt <- function(x) if (anyNA(x)) NA_real_ else sum(x)
 
 radetiketter <- c(
   totalt = "Totalt", okand = "Okänd", uppgift_saknas = "Uppgift saknas",
   stat = "Stat", region = "Region", kommun = "Kommun",
   privat_naringsliv = "Privat näringsliv", offentliga_bolag = "Offentliga bolag"
 )
+# Civilstånd: ordning och etiketter för kolumnerna i flytt_civilstand
+civil_etiketter <- c(ogift = "Ogift", gift = "Gift", registrerad_partner = "Registrerad partner",
+                     skild = "Skild", skild_partner = "Skild partner", anka_ankling = "Änka/änkling",
+                     efterlevande_partner = "Efterlevande partner", okand = "Okänd")
 etikettera_rad <- function(x) {
   x <- as.character(x)
   ut <- unname(radetiketter[x])
@@ -147,6 +216,22 @@ visa_tabell <- function(df, heltal = character(), procent = character(), ...) {
   if (length(h)) dt <- DT::formatRound(dt, h, digits = 0, mark = " ")
   if (length(p)) dt <- DT::formatPercentage(dt, p, digits = 1, dec.mark = ",")
   dt
+}
+
+# Som visa_tabell, men saknade (dolda) värden visas som "–" i stället för tomt, och talen sorteras som tal.
+# Orsaken till att ett värde är dolt visas inte (röjandeskydd). Talkolumnerna anges i `heltal`.
+visa_tabell_dold <- function(df, heltal = character(), decimaler = 0, ...) {
+  h <- intersect(heltal, names(df))
+  mall <- DT::JS("function(d, type, row) {",
+                 "  if (d === null || d === undefined) return type === 'display' ? '\u2013' : null;",
+                 "  if (type !== 'display') return d;",
+                 sprintf("  return $.fn.dataTable.render.number(' ', ',', %d).display(d);", as.integer(decimaler)),
+                 "}")
+  extra <- list(...)
+  defs <- lapply(match(h, names(df)) - 1L, function(i) list(targets = i, className = "dt-right", render = mall))
+  extra$columnDefs <- c(extra$columnDefs, defs)
+  DT::datatable(df, rownames = FALSE, colnames = gsub("_", " ", names(df)),
+                escape = TRUE, options = do.call(dt_alt, extra))
 }
 
 # Är Poppins installerat på maskinen som kör R? Då räknar diagrammen ut textens bredd med Poppins,
@@ -207,7 +292,7 @@ girafe_alt <- function(...) {
 #---- Validering ----------------------------------------------------------------
 
 validera_tabell <- function(df, namn, giltiga_omraden = NULL) {
-  k <- tabellkontrakt[[namn]]
+  k <- alla_kontrakt[[namn]]
   fel <- function(text) stop(sprintf("%s: %s", namn, text), call. = FALSE)
   if (!is.data.frame(df)) fel("är ingen data.frame")
   matt <- if (is.null(k$matt)) setdiff(names(df), k$nyckel) else k$matt
@@ -241,7 +326,7 @@ validera_tabell <- function(df, namn, giltiga_omraden = NULL) {
 }
 
 validera_tabeller <- function(data) {
-  for (namn in names(tabellkontrakt)) {
+  for (namn in names(alla_kontrakt)) {
     df <- data[[namn]]
     if (is.null(df)) next
     validera_tabell(df, namn, data$omraden$omrade)
@@ -280,6 +365,10 @@ forbered_flytt_alder <- function(df) {
 # kvinnor (befolkning = man + kvinnor räknas ut om kolumnen saknas). Inflyttade och utflyttade
 # har ingen uppdelning på kön. Böjningsformer av kolumnnamnen godtas. Har tabellen fler
 # uppdelningar (t.ex. åldersgrupp) används raden för totalt om den finns, annars summeras den.
+# Måtten i befolkningsserien (flytt_serie_ar). Namnen är utan å, ä och ö, som i databasen:
+# fodda, doda, fodelsenetto (födda minus döda) och befolkningsforandring (födelsenetto + flyttnetto).
+flytt_serie_matt <- c("man", "kvinnor", "inflyttad", "utflyttad", "flyttnetto",
+                      "kvarboende", "fodda", "doda", "fodelsenetto", "befolkningsforandring")
 forbered_flytt_serie <- function(df) {
   byt <- c(inflyttade = "inflyttad", utflyttade = "utflyttad", invanare = "befolkning",
            folkmangd = "befolkning", befolkning_totalt = "befolkning",
@@ -287,11 +376,11 @@ forbered_flytt_serie <- function(df) {
   traff <- names(df) %in% names(byt)
   names(df)[traff] <- unname(byt[names(df)[traff]])
   if (!all(c("ar", "omrade") %in% names(df))) return(df)
-  tal <- intersect(c("man", "kvinnor", "befolkning", "inflyttad", "utflyttad", "flyttnetto"), names(df))
+  tal <- intersect(c("befolkning", flytt_serie_matt), names(df))
   for (kol in tal) df[[kol]] <- suppressWarnings(as.numeric(df[[kol]]))
   # Övriga textkolumner är extra uppdelningar. Raden för totalt används om den finns.
   extra <- setdiff(names(df)[vapply(df, function(x) is.character(x) || is.factor(x), logical(1))],
-                   c("ar", "omrade"))
+                   c("ar", "omrade", names(df)[flaggkolumn(names(df))]))
   for (e in extra) {
     v <- tolower(trimws(as.character(df[[e]])))
     tot <- v %in% c("totalt", "total", "alla", "samtliga", "summa", "totalt alla")
@@ -300,11 +389,10 @@ forbered_flytt_serie <- function(df) {
   if ("kon" %in% names(df)) df$kon <- NULL
   nyckel <- c("ar", "omrade")
   if (length(tal) && anyDuplicated(df[nyckel])) {
-    df <- stats::aggregate(df[tal], df[nyckel], function(x) summa_na(x))
+    df <- stats::aggregate(df[tal], df[nyckel], function(x) summa_strikt(x), na.action = stats::na.pass)
   }
   if (!"befolkning" %in% names(df) && all(c("man", "kvinnor") %in% names(df))) {
-    df$befolkning <- ifelse(is.na(df$man) & is.na(df$kvinnor), NA_real_,
-                            rowSums(df[c("man", "kvinnor")], na.rm = TRUE))
+    df$befolkning <- df$man + df$kvinnor      # dolt man eller kvinnor ger dolt resultat (NA)
   }
   if (!"flyttnetto" %in% names(df) && all(c("inflyttad", "utflyttad") %in% names(df))) {
     df$flyttnetto <- df$inflyttad - df$utflyttad
@@ -358,9 +446,10 @@ forbered_riktning <- function(df) {
 }
 
 normalisera_tabell <- function(df, namn) {
-  k <- tabellkontrakt[[namn]]
+  k <- alla_kontrakt[[namn]]
   df <- as.data.frame(df, stringsAsFactors = FALSE)
   names(df) <- tolower(names(df))
+  flaggnamn <- names(df)[flaggkolumn(names(df))]   # flaggor följer med raderna tills de skiljs av sist
   if (namn == "flytt_alder") df <- forbered_flytt_alder(df)
   if (namn == "flytt_serie_ar") df <- forbered_flytt_serie(df)
   if (namn == "riktning_storst_pendling") df <- forbered_riktning(df)
@@ -403,10 +492,12 @@ normalisera_tabell <- function(df, namn) {
       all(c("antal_hus", "tot_hus") %in% names(df))) {
     df$andel <- ifelse(df$tot_hus > 0, df$antal_hus / df$tot_hus, NA_real_)
   }
-  matt <- if (is.null(k$matt)) setdiff(names(df), k$nyckel) else k$matt
+  matt <- if (is.null(k$matt)) setdiff(names(df), c(k$nyckel, flaggnamn)) else k$matt
   # Flytt över flera år: befolkning krävs, övriga flyttmått behålls om de finns
+  # Flytt per åldersgrupp: flyttnetto krävs, inflyttade och utflyttade behålls om de finns
+  if (namn == "flytt_alder") matt <- union("flyttnetto", intersect(c("inflyttad", "utflyttad"), names(df)))
   if (namn == "flytt_serie_ar") {
-    matt <- union("befolkning", intersect(c("man", "kvinnor", "inflyttad", "utflyttad", "flyttnetto"), names(df)))
+    matt <- union("befolkning", intersect(flytt_serie_matt, names(df)))
   }
   saknas_matt <- setdiff(matt, names(df))
   if (length(saknas_matt)) {
@@ -417,7 +508,7 @@ normalisera_tabell <- function(df, namn) {
   # Dubbla nycklar beror oftast på en extra kolumn som skiljer raderna åt (kön, typ, riktning).
   # Den tas annars bort tyst, så den namnges här.
   if (anyDuplicated(df[k$nyckel])) {
-    extra <- setdiff(names(df), c(k$nyckel, matt))
+    extra <- setdiff(names(df), c(k$nyckel, matt, flaggnamn))
     d <- df[duplicated(df[k$nyckel]), k$nyckel, drop = FALSE][1, , drop = FALSE]
     stop(sprintf("%s: dubbla nycklar, t.ex. %s. Övriga kolumner i tabellen som kan skilja raderna åt: %s",
                  namn, paste(names(d), unlist(d), sep = "=", collapse = ", "),
@@ -425,8 +516,18 @@ normalisera_tabell <- function(df, namn) {
   }
   # Riktningstabellen behåller kommunkod och kommunnamn (text) utöver nyckel och mått
   behall <- if (namn == "riktning_storst_pendling") c("kommunkod", "kommunnamn") else character()
+  fl <- df[c(k$nyckel, intersect(flaggnamn, names(df)))]
   df <- df[c(k$nyckel, behall, matt)]
   for (kol in matt) df[[kol]] <- till_tal(df[[kol]], kol, namn)
+  # Flaggor: _dolt som text, _ovre och rang_ok som logiska (TRUE/FALSE kan komma som text eller 0/1)
+  for (kol in setdiff(names(fl), k$nyckel)) {
+    fl[[kol]] <- if (grepl("_dolt$", kol)) as.character(fl[[kol]]) else {
+      v <- fl[[kol]]
+      if (is.character(v)) v <- toupper(trimws(v)) %in% c("TRUE", "T", "1") else v <- as.logical(v)
+      v
+    }
+  }
+  attr(df, "flaggor") <- if (ncol(fl) > length(k$nyckel)) fl else NULL
   df
 }
 
@@ -434,11 +535,14 @@ normalisera_tabell <- function(df, namn) {
 # En tabell som inte går att läsa blir NULL och orsaken sparas; övriga läses ändå.
 hamta_fem_tabeller <- function(las, inst) {
   tabeller <- list()
+  flaggor <- list()
   fel <- character()
-  for (namn in names(tabellkontrakt)) {
+  for (namn in names(alla_kontrakt)) {
     resultat <- tryCatch({
       df <- normalisera_tabell(las(inst$tabeller[[namn]] %||% namn), namn)
       validera_tabell(df, namn)
+      flaggor[namn] <- list(attr(df, "flaggor"))
+      attr(df, "flaggor") <- NULL
       df
     }, error = function(e) {
       message("Tabellen ", namn, " kunde inte läsas: ", conditionMessage(e))
@@ -455,7 +559,7 @@ hamta_fem_tabeller <- function(las, inst) {
       fel[["bilar_kommun"]] <<- conditionMessage(e)
       NULL
     }))
-  list(tabeller = tabeller, fel = fel)
+  list(tabeller = tabeller, fel = fel, flaggor = flaggor[!vapply(flaggor, is.null, logical(1))])
 }
 
 # Tabell med könen som kolumngrupper bredvid varandra: en rubrikrad med Kvinnor och Män (colspan)
@@ -487,9 +591,15 @@ grupperad_tabell <- function(rader, grupper, decimaler = 0, markera = character(
          class = if ((i - 1) %% length(delnamn) == 0) "grupp-start" else NULL)))
   container <- htmltools::tags$table(class = "display", htmltools::tags$thead(rubrik1, rubrik2))
   tillval <- dt_alt(...)
-  tillval$columnDefs <- list(list(className = "grupp-start", targets = as.list(starter)))
+  # Talen formateras i webbläsaren: tusentalsavgränsare, decimalkomma och – för dolda (saknade) värden.
+  mall <- DT::JS("function(d, type, row) {",
+                 "  if (d === null || d === undefined) return type === 'display' ? '\u2013' : null;",
+                 "  if (type !== 'display') return d;",
+                 sprintf("  return $.fn.dataTable.render.number(' ', ',', %d).display(d);", as.integer(decimaler)),
+                 "}")
+  tillval$columnDefs <- list(list(className = "grupp-start", targets = as.list(starter)),
+                             list(targets = as.list(n_rad - 1L + seq_along(vardekol)), className = "dt-right", render = mall))
   dt <- DT::datatable(df, container = container, rownames = FALSE, escape = TRUE, options = tillval)
-  dt <- DT::formatRound(dt, vardekol, digits = decimaler, mark = " ", dec.mark = ",")
   for (k in vardekol[sub("^.*\\|\\|", "", vardekol) %in% markera]) {
     dt <- DT::formatStyle(dt, k, backgroundColor = rd_farg$mark)
   }
@@ -641,10 +751,9 @@ skapa_exempeltabeller <- function(omraden) {
   inkomst$medel_ink <- round(190000 * niva[g] * (1 + 0.012 * inkomst$i + 0.025 * inkomst$t) *
                                ifelse(inkomst$kon == "Män", 1.08, 0.94))
   inkomst$median_ink <- round(inkomst$medel_ink * 0.92)
-  inkomst$summa_ink <- inkomst$antal_ind * inkomst$medel_ink
   inkomst <- inkomst[order(inkomst$ar, inkomst$omrade, inkomst$kon, g), ]
   inkomst <- inkomst[c("ar", "omrade", "kon", "aldersgrupp",
-                       "antal_ind", "median_ink", "summa_ink", "medel_ink")]
+                       "antal_ind", "median_ink", "medel_ink")]
 
   # Hushållens disponibla inkomst
   hushall <- data.frame(ar = rutnat$ar, omrade = rutnat$omrade,
@@ -652,7 +761,6 @@ skapa_exempeltabeller <- function(omraden) {
                         stringsAsFactors = FALSE)
   hushall$medel_ink <- round(330000 + rutnat$i * 7000 + rutnat$t * 11000, -2)
   hushall$median_ink <- round(hushall$medel_ink * 0.9, -2)
-  hushall$summa_ink <- hushall$antal_hus * hushall$medel_ink
 
   # Ekonomisk standard: kvartilgränserna är rikets, så 25 % per kvartil = som riket.
   ek <- merge(rutnat, data.frame(kvartil_ink = paste("kvartil", 1:4), stringsAsFactors = FALSE))
@@ -955,13 +1063,22 @@ ale_inst <- list(
     riktning_storst_pendling = "riktning_storst_pendling",
     flytt_serie_ar = "flytt_serie_ar",
     bilar_distrikt = "bilar_distrikt",
-    bilar_kommun = "bilar_kommun"
+    bilar_kommun = "bilar_kommun",
+    flytt_civilstand = "flytt_civilstand",
+    sammanraknad_forv_inkomst = "sammanraknad_forv_inkomst",
+    storlek_hushall = "storlek_hushall",
+    antal_anstallda = "antal_anstallda",
+    foretag_bransch = "foretag_bransch",
+    handel = "handel",
+    konsumtion_ind = "konsumtion_ind",
+    konsumtion_hus = "konsumtion_hus"
   ),
   lanskod = "20"
 )
 
 intern_kol <- function(df, monster, tabell) {
   traff <- grep(monster, names(df), value = TRUE)
+  traff <- traff[!flaggkolumn(traff)]
   if (length(traff) < 1) {
     stop(sprintf("Hittar ingen kolumn som matchar '%s' i %s. Kolumner: %s",
                  monster, tabell, paste(names(df), collapse = ", ")), call. = FALSE)
@@ -1023,6 +1140,11 @@ hamta_appdata_db <- function(inst = ale_inst) {
     flytt$inflyttad - flytt$utflyttad
   # Ev. könsuppdelade rader ska inte dubblera nyckeln: behåll totalrad.
   if ("kon" %in% names(f)) flytt <- flytt[is.na(f$kon) | normalisera_kon(f$kon) %in% "Totalt", ]
+  flaggor_flytt <- {
+    rad <- if ("kon" %in% names(f)) is.na(f$kon) | normalisera_kon(f$kon) %in% "Totalt" else rep(TRUE, nrow(f))
+    fk <- names(f)[flaggkolumn(names(f))]
+    if (length(fk)) cbind(flytt[c("ar", "omrade")], f[rad, fk, drop = FALSE]) else NULL
+  }
 
   # --- Utbildning (bred tabell: antal_<nivå> per kön) -------------------------
   u <- las(inst$tabell_utbildning)
@@ -1038,9 +1160,20 @@ hamta_appdata_db <- function(inst = ale_inst) {
     antal_eftergymnasial = as.numeric(u[[nivakol("efter")]]),
     antal_okand = as.numeric(u[[nivakol("okand|saknas|uppgift")]])
   )
+  # Andelar (0–1) som pipelinen har räknat och röjandegranskat (andel_forgymnasial m.fl.).
+  # Appen räknar inga andelar själv; saknas kolumnerna visas bara antal.
+  andelkol <- names(u)[grepl("^andel_", names(u)) & !flaggkolumn(names(u))]
+  for (k in andelkol) utb[[k]] <- as.numeric(u[[k]])
+  # Totalt: saknas kolumnen räknas den ut, men ett dolt nivåvärde ger dolt totalt (NA), inte en för låg summa
   utb$totalt <- if ("totalt" %in% names(u)) as.numeric(u$totalt) else
-    rowSums(utb[c("antal_forgymnasial", "antal_gymnasial",
-                  "antal_eftergymnasial", "antal_okand")], na.rm = TRUE)
+    ifelse(rowSums(is.na(utb[c("antal_forgymnasial", "antal_gymnasial", "antal_eftergymnasial", "antal_okand")])) > 0,
+           NA_real_,
+           rowSums(utb[c("antal_forgymnasial", "antal_gymnasial", "antal_eftergymnasial", "antal_okand")]))
+  flaggor_utb <- {
+    fk <- names(u)[flaggkolumn(names(u))]
+    if (length(fk)) cbind(utb[c("ar", "omrade", "kon")], u[fk]) else NULL
+  }
+  if (!is.null(flaggor_utb)) flaggor_utb <- flaggor_utb[!is.na(utb$kon), , drop = FALSE]
   utb <- utb[!is.na(utb$kon), ]    # rader med okänt kön ingår inte
 
   # --- Inkomst, hushållsinkomst, ekonomisk standard och sysselsättning --------
@@ -1062,7 +1195,7 @@ hamta_appdata_db <- function(inst = ale_inst) {
   # den kan innehålla koder utanför Dalarna (exklaver som ligger under en annan kommun), och
   # sådana rader ignoreras nedan i stället för att ge distrikt utan geometri.
   koder <- sort(unique(c(flytt$omrade, utb$omrade,
-                         unlist(lapply(tab$tabeller[setdiff(names(tab$tabeller), "bilar_distrikt")],
+                         unlist(lapply(tab$tabeller[setdiff(names(tab$tabeller), c("bilar_distrikt", names(tabellkontrakt_ny)))],
                                        function(d) d$omrade), use.names = FALSE))))
   if (!is.null(tab$tabeller$bilar_distrikt)) {
     bd <- tab$tabeller$bilar_distrikt
@@ -1142,8 +1275,10 @@ hamta_appdata_db <- function(inst = ale_inst) {
       omraden = data.frame(omrade = koder, namn = namn, kommunkod = kommunkod, stringsAsFactors = FALSE),
       flytt_summering = flytt, utbildning = utb,
       distrikt = geo_distrikt, kommun = geo_kommun, exempeldata = FALSE,
-      kalla = "Region Dalarna, Samhällsanalys (databasschema ale)",
-      tabellfel = tab$fel
+      kalla = "Källa: Dalarnas mikrodatabas (SCB), bearbetning av Samhällsanalys, Region Dalarna",
+      tabellfel = tab$fel,
+      flaggor = c(tab$flaggor,
+                  Filter(Negate(is.null), list(flytt_summering = flaggor_flytt, utbildning = flaggor_utb)))
     ),
     tab$tabeller
   )
@@ -1177,6 +1312,28 @@ indikatorkalla <- c(befolkning = "flytt_summering", inflyttad = "flytt_summering
                     median_ink = "hushall_inkomst")
 indikatornamn <- unlist(indikatorer, use.names = TRUE)
 names(indikatornamn) <- sub("^[^.]*\\.", "", names(indikatornamn))
+# Mått för "Jämför på karta". Bara mått som går att jämföra mellan distrikt av olika storlek:
+# medelvärden, medianer och andelar eller kvoter. Rena antal ingår inte, eftersom de mest speglar
+# hur stort distriktet är. Varje mått räknas ur publicerade värden; om någon del är dolt (NA)
+# blir distriktet grått. Inget summeras över dolda celler.
+# enhet = text i teckenförklaring och tabell, dec = antal decimaler.
+kartindikatorer <- list(
+  "Inkomst" = c("Medelinkomst, hushåll" = "k_medel_ink", "Medianinkomst, hushåll" = "k_median_ink"),
+  "Befolkning och flytt" = c("Flyttnetto per 1 000 invånare" = "k_flyttnetto_per",
+                             "Befolkningsförändring från föregående år" = "k_bef_forandring",
+                             "Dagbefolkning i procent av nattbefolkning" = "k_dag_natt"),
+  "Utbildning" = c("Andel med eftergymnasial utbildning" = "k_eftergym"),
+  "Bilinnehav" = c("Andel elektrifierade personbilar" = "k_bil_elektrifierade",
+                   "Andel laddbara personbilar" = "k_bil_laddbara",
+                   "Andel eldrivna personbilar" = "k_bil_el")
+)
+kartindikator_info <- list(
+  k_medel_ink = list(enhet = "kr", dec = 0), k_median_ink = list(enhet = "kr", dec = 0),
+  k_flyttnetto_per = list(enhet = "per 1 000", dec = 1), k_bef_forandring = list(enhet = "%", dec = 1),
+  k_dag_natt = list(enhet = "%", dec = 1), k_eftergym = list(enhet = "%", dec = 1),
+  k_bil_elektrifierade = list(enhet = "%", dec = 1), k_bil_laddbara = list(enhet = "%", dec = 1),
+  k_bil_el = list(enhet = "%", dec = 2)
+)
 omradesval <- setNames(
   appdata$omraden$omrade,
   paste0(appdata$omraden$namn, " (", appdata$omraden$omrade, ")")

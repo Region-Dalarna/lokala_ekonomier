@@ -84,7 +84,7 @@ shinyServer(function(input, output, session) {
     if (any(serie$kon == "Totalt")) return(serie)
     tot <- serie |>
       group_by(ar, omrade, aldersgrupp) |>
-      summarise(flyttnetto = summa_na(flyttnetto), .groups = "drop") |>
+      summarise(across(any_of(c("flyttnetto", "inflyttad", "utflyttad")), summa_strikt), .groups = "drop") |>
       mutate(kon = "Totalt")
     bind_rows(serie, tot)
   })
@@ -143,13 +143,61 @@ shinyServer(function(input, output, session) {
                              paste(names(delsummor), siffror(delsummor), sep = ": ", collapse = ", ")),
            x = "Flyttnetto (inflyttade minus utflyttade)", y = NULL, caption = appdata$kalla)
   })
+  # Översikten: inflyttade, utflyttade och flyttnetto per åldersgrupp för valt år, totalt eller uppdelat på kön.
+  # Totalraden är en summa av åldersgrupperna och är NA (–) om någon grupp är dold.
+  output$flytt_alder_oversikt_tabell <- renderDT({
+    if (is.null(appdata$flytt_alder)) return(visa_tabell(tom_tabell()))
+    d <- flytt_alder_kon()
+    d <- d[d$ar == valt_ar(), , drop = FALSE]
+    d$kon <- as.character(d$kon)
+    validate(need(nrow(d) > 0, "Flyttuppgift per åldersgrupp saknas för valt distrikt och år."))
+    kol <- c(Inflyttade = "inflyttad", Utflyttade = "utflyttad", Flyttnetto = "flyttnetto")
+    kol <- kol[kol %in% names(d)]
+    ag <- flytt_alder_ordning[flytt_alder_ordning %in% d$aldersgrupp]
+    per_kon <- lapply(setNames(unique(d$kon), unique(d$kon)), function(k) {
+      x <- d[d$kon == k, , drop = FALSE]
+      x <- x[match(ag, x$aldersgrupp), unname(kol), drop = FALSE]
+      tot <- as.data.frame(lapply(x, summa_strikt))
+      out <- rbind(x, tot)
+      setNames(out, names(kol))
+    })
+    ordning <- intersect(c("Totalt", kon_ordning), names(per_kon))
+    grupper <- if (delat(input$vis_flytt)) per_kon[intersect(kon_ordning, ordning)] else per_kon["Totalt"]
+    grupperad_tabell(data.frame(Åldersgrupp = c(ag, "Totalt")), grupper,
+                     fet_rad = c("Åldersgrupp", "Totalt"), dom = "t", ordering = FALSE, pageLength = 50)
+  })
+  # Valt år: inflyttade, utflyttade och flyttnetto som tre kolumner per kön, en rad per åldersgrupp.
+  output$flytt_alder_valt_ar <- renderDT({
+    if (is.null(appdata$flytt_alder)) return(visa_tabell(tom_tabell()))
+    d <- flytt_kon_urval(input$vis_flytt_tabell)
+    d$kon <- as.character(d$kon)
+    d <- d[d$ar == valt_ar(), , drop = FALSE]
+    matt <- c(Inflyttade = "inflyttad", Utflyttade = "utflyttad", Flyttnetto = "flyttnetto")
+    validate(need(all(matt %in% names(d)),
+                  "Tabellen flytt_alder saknar inflyttad eller utflyttad per åldersgrupp."),
+             need(nrow(d) > 0, "Inga uppgifter för valt år."))
+    ag <- c(flytt_alder_ordning[flytt_alder_ordning %in% d$aldersgrupp],
+            setdiff(unique(d$aldersgrupp), flytt_alder_ordning))
+    konv <- intersect(c("Totalt", kon_ordning), unique(d$kon))
+    grupper <- lapply(setNames(konv, konv), function(k) {
+      x <- d[d$kon == k, , drop = FALSE]
+      x <- x[match(ag, x$aldersgrupp), , drop = FALSE]
+      ut <- as.data.frame(lapply(matt, function(m) x[[m]]), check.names = FALSE)
+      names(ut) <- names(matt)
+      # Totalrad: NA (–) om någon åldersgrupp är dold
+      rbind(ut, as.data.frame(lapply(ut, summa_strikt), check.names = FALSE))
+    })
+    grupperad_tabell(data.frame(Åldersgrupp = c(ag, "Totalt")), grupper,
+                     fet_rad = c("Åldersgrupp", "Totalt"), dom = "t", ordering = FALSE, pageLength = 50)
+  })
   output$flytt_alder_tabell <- renderDT({
     if (is.null(appdata$flytt_alder)) return(visa_tabell(tom_tabell()))
     d <- flytt_kon_urval(input$vis_flytt_tabell)
     d$kon <- as.character(d$kon)
+    m <- if (input$flytt_tabell_matt %in% names(d)) input$flytt_tabell_matt else "flyttnetto"
     bred <- d |>
-      select(kon, aldersgrupp, ar, flyttnetto) |>
-      tidyr::pivot_wider(names_from = ar, values_from = flyttnetto) |>
+      select(kon, aldersgrupp, ar, all_of(m)) |>
+      tidyr::pivot_wider(names_from = ar, values_from = all_of(m)) |>
       as.data.frame(check.names = FALSE)
     arskol <- setdiff(names(bred), c("kon", "aldersgrupp"))
     arskol <- arskol[order(as.numeric(arskol))]
@@ -160,7 +208,7 @@ shinyServer(function(input, output, session) {
     ut <- do.call(rbind, lapply(unique(bred$kon), function(kv) {
       x <- bred[bred$kon == kv, , drop = FALSE]
       summarad <- data.frame(kon = kv, aldersgrupp = "Totalt", check.names = FALSE)
-      for (k in arskol) summarad[[k]] <- summa_na(x[[k]])
+      for (k in arskol) summarad[[k]] <- summa_strikt(x[[k]])   # NA om någon åldersgrupp är dold
       rbind(x, summarad)
     }))
     if (delat(input$vis_flytt_tabell)) {
@@ -346,15 +394,55 @@ shinyServer(function(input, output, session) {
   output$flytttabell <- renderDT({
     df <- befolkning_urval("Totalt")
     kol <- c(ar = "År", befolkning = "Befolkning", man = "Män", kvinnor = "Kvinnor",
-             inflyttad = "Inflyttade", utflyttad = "Utflyttade", flyttnetto = "Flyttnetto")
+             kvarboende = "Kvarboende", inflyttad = "Inflyttade", utflyttad = "Utflyttade",
+             flyttnetto = "Flyttnetto", fodda = "Födda", doda = "Döda",
+             fodelsenetto = "Födelsenetto", befolkningsforandring = "Befolkningsförändring")
     kol <- kol[names(kol) %in% names(df)]
     df <- setNames(as.data.frame(df)[names(kol)], unname(kol))
-    dt <- visa_tabell(df, heltal = setdiff(names(df), "År"),
-                      dom = "t", ordering = FALSE, pageLength = 50)
+    dt <- visa_tabell_dold(df, heltal = setdiff(names(df), "År"),
+                           dom = "t", ordering = FALSE, pageLength = 50)
     # Valt år markeras
     DT::formatStyle(dt, "År", target = "row",
                     backgroundColor = DT::styleEqual(valt_ar(), rd_farg$mark),
                     fontWeight = DT::styleEqual(valt_ar(), "bold"))
+  })
+  # Befolkningens förändring över åren, uppdelad i delar: antingen födelsenetto och flyttnetto
+  # (som tillsammans är befolkningsförändringen), eller vilka som utgör årets befolkning
+  # (kvarboende, inflyttade och födda). Dolda värden ger ingen stapel.
+  output$bef_delar_diagram <- renderSvg(bredd = 9.5, hojd = 4.2, {
+    req(input$bef_delar %in% c("netto", "sammansattning"))
+    df <- befolkning_urval("Totalt")
+    netto <- identical(input$bef_delar, "netto")
+    kol <- if (netto) c(Födelsenetto = "fodelsenetto", Flyttnetto = "flyttnetto")
+    else c(Kvarboende = "kvarboende", Inflyttade = "inflyttad", Födda = "fodda")
+    validate(need(all(kol %in% names(df)),
+                  paste0("Uppgiften saknas i befolkningsserien. Kolumner som behövs: ", paste(kol, collapse = ", "))))
+    lang <- do.call(rbind, lapply(names(kol), function(n)
+      data.frame(ar = df$ar, del = n, antal = df[[kol[[n]]]], stringsAsFactors = FALSE)))
+    lang$del <- factor(lang$del, levels = names(kol))
+    validate(need(any(is.finite(lang$antal)), "Alla värden är dolda för valt distrikt."))
+    lang$popup <- paste0(lang$ar, "<br/>", lang$del, ": ", vt(lang$antal))
+    farger <- if (netto) c(Födelsenetto = rd_farg$gra_mork, Flyttnetto = rd_farg$primar)
+    else c(Kvarboende = rd_farg$gra, Inflyttade = rd_farg$primar, Födda = rd_farg$primar_mork)
+    p <- ggplot(lang, aes(ar, antal, fill = del)) +
+      geom_col_interactive(aes(tooltip = popup, data_id = paste(del, ar)), width = 0.7, na.rm = TRUE) +
+      geom_hline(yintercept = 0, colour = "grey30", linewidth = 0.4) +
+      geom_vline(xintercept = valt_ar(), linetype = "dotted")
+    if (netto && "befolkningsforandring" %in% names(df)) {
+      tot <- data.frame(ar = df$ar, antal = df$befolkningsforandring)
+      tot$popup <- paste0(tot$ar, "<br/>Befolkningsförändring: ", vt(tot$antal))
+      p <- p + geom_point_interactive(data = tot, aes(ar, antal, tooltip = popup, data_id = paste("tot", ar)),
+                                      inherit.aes = FALSE, shape = 23, size = 3, fill = "white", colour = "black",
+                                      na.rm = TRUE)
+    }
+    p + scale_fill_manual(values = farger, name = NULL) +
+      scale_x_continuous(breaks = sort(unique(df$ar))) +
+      scale_y_continuous(labels = siffror) +
+      tema_app() + theme(legend.position = "bottom", axis.text.x = element_text(angle = 45, hjust = 1)) +
+      labs(title = if (netto) "Födelsenetto och flyttnetto" else "Befolkningens sammansättning",
+           subtitle = if (netto) "Ruten är befolkningsförändringen (födelsenetto + flyttnetto). Dolda värden ger ingen stapel eller ruta."
+           else "Kvarboende + inflyttade + födda = befolkningen. Dolda värden ger ingen stapel.",
+           x = NULL, y = "Antal personer", caption = appdata$kalla)
   })
   utbildning_kon <- reactive({
     req(input$vis_utb %in% visaval)
@@ -373,39 +461,56 @@ shinyServer(function(input, output, session) {
     mx <- suppressWarnings(max(unlist(u), na.rm = TRUE))
     if (is.finite(mx)) mx * 1.05 else NA_real_
   })
+  # Antal eller andel för utbildning. Andelarna är röjandegranskade i pipelinen (andel_<nivå>, 0–1)
+  # och visas i procent; appen räknar inga andelar själv.
+  utb_andel <- reactive(identical(input$vis_utb_enhet, "Andel"))
+  utb_kolumner <- reactive({
+    if (utb_andel()) sub("^antal_", "andel_", names(utbildningsnivaer)) else names(utbildningsnivaer)
+  })
+  utb_finns_andel <- reactive(all(sub("^antal_", "andel_", names(utbildningsnivaer)) %in% names(appdata$utbildning)))
   output$utbildning <- renderSvg(bredd = 10.5, hojd = 4.4, {
+    andel <- utb_andel()
+    validate(need(!andel || utb_finns_andel(),
+                  "Andelar saknas i tabellen. Kör om pipelinen (roj_alla) och läs in ale.utbildning på nytt."))
+    kol <- utb_kolumner()
     lang <- utbildningsurval() |>
-      select(kon, all_of(names(utbildningsnivaer))) |>
+      select(kon, all_of(kol)) |>
+      rename_with(~ sub("^andel_", "antal_", .x), all_of(kol)) |>
       pivot_longer(-kon, names_to = "niva", values_to = "antal")
+    if (andel) lang$antal <- lang$antal * 100
     validate(need(nrow(lang) > 0 && any(is.finite(lang$antal)),
                   "Utbildningsuppgift saknas för valt urval."))
     lang$niva <- factor(lang$niva, levels = names(utbildningsnivaer),
-                        labels = unname(utbildningsnivaer))
-    lang$popup <- paste0(lang$niva, "<br/>", lang$kon, ": ", vt(lang$antal))
+                        labels = unname(utbildningsnivaer))          # Uppgift saknas ligger sist
+    lang$popup <- paste0(lang$niva, "<br/>", lang$kon, ": ",
+                         if (andel) kart_format(lang$antal, list(dec = 1, enhet = "%")) else vt(lang$antal))
+    y_titel <- if (andel) "Andel (%)" else "Antal"
+    y_skala <- if (andel) scale_y_continuous(labels = function(x) paste0(x, " %"), limits = c(0, NA),
+                                             expand = expansion(mult = c(0, 0.08))) else scale_y_continuous(labels = siffror)
     if (delat(input$vis_utb)) {
       lang$kon <- factor(lang$kon, levels = kon_ordning)
       p <- ggplot(lang, aes(niva, antal, fill = kon)) +
         geom_col_interactive(aes(tooltip = popup, data_id = paste(niva, kon)),
                              position = position_dodge(width = 0.8), width = 0.75, na.rm = TRUE) +
         scale_fill_manual(values = kon_farger, name = NULL) +
-        scale_y_continuous(labels = siffror) +
+        y_skala +
         tema_app() + theme(legend.position = "bottom") +
         labs(title = paste("Utbildningsnivå, uppdelat på kön", valt_ar()),
-             x = NULL, y = "Antal", caption = appdata$kalla)
+             x = NULL, y = y_titel, caption = appdata$kalla)
     } else {
       p <- ggplot(lang, aes(niva, antal)) +
         geom_col_interactive(aes(tooltip = popup, data_id = niva), fill = rd_farg$primar, na.rm = TRUE) +
-        scale_y_continuous(labels = siffror) +
+        y_skala +
         tema_app() +
         labs(title = paste("Utbildningsnivå – Totalt", valt_ar()),
-             x = NULL, y = "Antal", caption = appdata$kalla)
+             x = NULL, y = y_titel, caption = appdata$kalla)
     }
-    if (is.finite(utbildning_ymax())) p <- p + coord_cartesian(ylim = c(0, utbildning_ymax()))
+    if (!andel && is.finite(utbildning_ymax())) p <- p + coord_cartesian(ylim = c(0, utbildning_ymax()))
     p
   })
   # Översikt över vilka tabeller som lästs in, och orsaken när en tabell saknas
   output$tabellstatus <- renderDT({
-    namn <- unique(c("flytt_summering", "utbildning", names(tabellkontrakt), "bilar_kommun"))
+    namn <- unique(c("flytt_summering", "utbildning", names(alla_kontrakt), "bilar_kommun"))
     rad <- lapply(namn, function(n) {
       d <- appdata[[n]]
       orsak <- appdata$tabellfel[n]
@@ -680,9 +785,18 @@ shinyServer(function(input, output, session) {
   })
   output$utbildningstabell <- renderDT({
     o <- valt_omrade(); a <- valt_ar()
-    # Underlaget visar alla könsrader för valt distrikt och år
-    datatable(filter(appdata$utbildning, omrade == o, ar == a), rownames = FALSE, escape = TRUE,
-              options = list(dom = "t"))
+    andel <- utb_andel()
+    validate(need(!andel || utb_finns_andel(),
+                  "Andelar saknas i tabellen. Kör om pipelinen (roj_alla) och läs in ale.utbildning på nytt."))
+    # Alla könsrader för valt distrikt och år; dolda värden visas som –
+    d <- filter(appdata$utbildning, omrade == o, ar == a)
+    d <- d[order(match(d$kon, c("Totalt", kon_ordning))), , drop = FALSE]
+    kol <- utb_kolumner()
+    ut <- data.frame(Kön = d$kon, stringsAsFactors = FALSE)
+    for (i in seq_along(kol)) ut[[unname(utbildningsnivaer)[i]]] <- if (andel) d[[kol[i]]] * 100 else d[[kol[i]]]
+    if (!andel) ut$Totalt <- d$totalt
+    if (andel) names(ut)[-1] <- paste0(names(ut)[-1], " (%)")
+    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Kön"), decimaler = if (andel) 1 else 0, dom = "t", ordering = FALSE)
   })
 
   output$kartstatus <- renderUI({
@@ -775,13 +889,19 @@ shinyServer(function(input, output, session) {
     # ändringar hanteras av leafletProxy nedan.
     opacitet <- isolate(input$karta_opacitet %||% 0.35)
     ram <- as.list(sf::st_bbox(karta_distrikt))
-    k <- leaflet(options = leafletOptions(minZoom = 5)) |>
+    # Hela länet ska få plats i kartan: utsnittet utvidgas med en marginal (andel av bredd och höjd),
+    # så att länsgränsen inte skärs av. zoomSnap 0.1 gör att utsnittet passar nära i stället för
+    # att runda till hela zoomsteg. Öka marginalen om kanten ligger för nära, minska den för att zooma in.
+    marginal_karta <- 0.05
+    dx <- ram$xmax - ram$xmin; dy <- ram$ymax - ram$ymin
+    ram$xmin <- ram$xmin - marginal_karta * dx; ram$xmax <- ram$xmax + marginal_karta * dx
+    ram$ymin <- ram$ymin - marginal_karta * dy; ram$ymax <- ram$ymax + marginal_karta * dy
+    k <- leaflet(options = leafletOptions(minZoom = 5, zoomSnap = 0.1)) |>
       addMapPane("pane_distrikt", zIndex = 410) |>
       addMapPane("pane_valt", zIndex = 420) |>
       addMapPane("pane_kommun", zIndex = 430) |>
-      addTiles(attribution = paste0("&copy; <a href='https://www.openstreetmap.org/copyright'>",
-                                    "OpenStreetMap</a>-bidragsgivare"),
-               options = tileOptions(className = "mattad-bakgrund")) |>
+      # Ljus bakgrundskarta (rdshinyappar >= 0.0.0.9005): bara ortnamn, tonade. Fler orter syns när man zoomar in.
+      lagg_till_bakgrundskarta(etiketter = "orter", etikett_opacitet = 0.6) |>
       rita_distrikt(opacitet) |>
       rita_valt(isolate(valt_omrade()), opacitet)
     # Kommungränserna ritas inte från början, bara om rutan i kartan kryssas i
@@ -811,7 +931,7 @@ shinyServer(function(input, output, session) {
 
   # ---- Inkomst, hushållsinkomst, ekonomisk standard och sysselsättning ------
   # Meddelande om en tabell saknas eller inte kunde läsas
-  for (namn in c(names(tabellkontrakt), "bilar_kommun")) local({
+  for (namn in c(names(alla_kontrakt), "bilar_kommun")) local({
     n <- namn
     output[[paste0("status_", n)]] <- renderUI({
       if (is.null(appdata[[n]])) {
@@ -828,24 +948,15 @@ shinyServer(function(input, output, session) {
     o <- valt_omrade(); a <- valt_ar()
     df <- appdata$inkomst |> filter(omrade == o, ar == a)
     if (!delat(input$vis_ink)) {
-      if (any(df$kon == "Totalt")) {
-        df <- filter(df, kon == "Totalt")
-      } else {
-        # Totalen beräknas ur könsuppdelningen. Medianen går inte att härleda.
-        df <- df |>
-          group_by(ar, omrade, aldersgrupp) |>
-          summarise(antal_ind = summa_na(antal_ind), summa_ink = summa_na(summa_ink),
-                    .groups = "drop") |>
-          mutate(kon = "Totalt",
-                 medel_ink = ifelse(antal_ind > 0, round(summa_ink / antal_ind), NA_real_),
-                 median_ink = NA_real_)
-      }
+      # Totalen läses ur tabellen. Appen summerar inte över kön eller rader (röjandeskydd);
+      # saknas totalrader visas ingen total.
+      df <- filter(df, kon == "Totalt")
     } else {
       df <- filter(df, kon %in% kon_ordning)
     }
     df |>
       select(any_of(c("ar", "omrade", "kon", "aldersgrupp",
-                      "antal_ind", "median_ink", "summa_ink", "medel_ink"))) |>
+                      "antal_ind", "median_ink", "medel_ink"))) |>
       mutate(aldersgrupp = factor(aldersgrupp, levels = aldersgruppsordning),
              kon = factor(kon, levels = c("Totalt", kon_ordning))) |>
       arrange(aldersgrupp, kon) |>
@@ -855,7 +966,7 @@ shinyServer(function(input, output, session) {
     req(input$ink_matt %in% unname(inkomstmatt))
     df <- inkomsturval()
     validate(need(nrow(df) > 0 && any(is.finite(df[[input$ink_matt]])),
-                  "Inkomstuppgift saknas för valt urval. För Totalt finns ingen median om totalrader saknas."))
+                  "Inkomstuppgift saknas för valt urval. Totalt visas bara om tabellen har totalrader (kön = totalt). Kör om pipelinen eller välj Uppdelat på kön."))
     # Fasta axlar: alla åldersgrupper visas alltid på x-axeln, och y-axeln går till störst
     # värde bland alla kön och år i valt distrikt, så Totalt och uppdelning på kön går att jämföra.
     df$aldersgrupp <- factor(df$aldersgrupp, levels = aldersgruppsordning)
@@ -888,7 +999,7 @@ shinyServer(function(input, output, session) {
     d <- inkomsturval()
     if (delat(input$vis_ink)) {
       # Kvinnor och Män som kolumngrupper bredvid varandra, med inkomstmåtten under
-      kol <- c(Antal = "antal_ind", Median = "median_ink", Summa = "summa_ink", Medel = "medel_ink")
+      kol <- c(Antal = "antal_ind", Median = "median_ink", Medel = "medel_ink")
       kol <- kol[kol %in% names(d)]
       ag <- unique(d$aldersgrupp)
       konv <- intersect(kon_ordning, unique(d$kon))
@@ -898,7 +1009,7 @@ shinyServer(function(input, output, session) {
       })
       return(grupperad_tabell(data.frame(Åldersgrupp = ag), grupper, dom = "t", ordering = FALSE, pageLength = 50))
     }
-    visa_tabell(d, heltal = c("antal_ind", "median_ink", "summa_ink", "medel_ink"))
+    visa_tabell(d, heltal = c("antal_ind", "median_ink", "medel_ink"))
   })
 
   # Hushållens disponibla inkomst över åren för valt distrikt
@@ -917,22 +1028,21 @@ shinyServer(function(input, output, session) {
       mutate(matt = factor(matt, levels = c("medel_ink", "median_ink"),
                            labels = c("Medelinkomst", "Medianinkomst")))
     df$popup <- paste0(df$ar, "<br/>", df$matt, ": ", vt(df$kronor), " kr")
-    ggplot(df, aes(ar, kronor, colour = matt, linetype = matt)) +
-      geom_line(na.rm = TRUE) +
-      geom_point_interactive(aes(tooltip = popup, data_id = paste(matt, ar)), size = 2.4, na.rm = TRUE) +
+    # Två staplar per år bredvid varandra: medel i huvudfärgen, median i en ljusare nyans
+    ggplot(df, aes(ar, kronor, fill = matt)) +
+      geom_col_interactive(aes(tooltip = popup, data_id = paste(matt, ar)),
+                           position = position_dodge(width = 0.8), width = 0.75, na.rm = TRUE) +
       geom_vline(xintercept = valt_ar(), linetype = "dotted") +
-      scale_colour_manual(values = c(Medelinkomst = rd_farg$primar, Medianinkomst = rd_farg$gra_mork), name = NULL) +
-      scale_linetype_manual(values = c(Medelinkomst = "solid", Medianinkomst = "dashed"), name = NULL) +
+      scale_fill_manual(values = c(Medelinkomst = rd_farg$primar_mork, Medianinkomst = rd_farg$ljus), name = NULL) +
       scale_x_continuous(breaks = ar_med_data) +
-      scale_y_continuous(labels = siffror) +
+      scale_y_continuous(labels = siffror, expand = expansion(mult = c(0, 0.05))) +
       tema_app() + theme(legend.position = "bottom") +
       labs(title = "Hushållens disponibla inkomst", x = NULL, y = "Kronor",
            caption = appdata$kalla)
   })
   output$hushall_tabell <- renderDT({
     if (is.null(appdata$hushall_inkomst)) return(visa_tabell(tom_tabell()))
-    visa_tabell(hushallurval(),
-                heltal = c("antal_hus", "summa_ink", "medel_ink", "median_ink"))
+    visa_tabell_dold(hushallurval(), heltal = c("antal_hus", "medel_ink", "median_ink"))
   })
 
   # Ekonomisk standard: andel hushåll per kvartil, valt distrikt och år
@@ -979,7 +1089,8 @@ shinyServer(function(input, output, session) {
     o <- valt_omrade(); a <- valt_ar()
     appdata[[tabell]] |>
       filter(omrade == o, ar == a, block == !!block) |>
-      mutate(etikett = etikettera_rad(rad))
+      mutate(etikett = etikettera_rad(rad)) |>
+      (\(x) x[order(ar_okand(x$rad)), , drop = FALSE])()      # Okänd längst ned
   }
   # Totalraden (block totalt) för valt distrikt, alla år
   totalrad <- function(tabell) {
@@ -989,6 +1100,35 @@ shinyServer(function(input, output, session) {
     if ("totalt" %in% d$rad) d <- d[d$rad == "totalt", ]
     d |> group_by(ar) |> slice(1) |> ungroup() |> arrange(ar)
   }
+
+  # Totalraden (block totalt) för valt distrikt och år, eller NULL om den saknas
+  total_valt_ar <- function(tabell) {
+    d <- tryCatch(totalrad(tabell), error = function(e) NULL)
+    if (is.null(d) || !nrow(d)) return(NULL)
+    d <- d[d$ar == valt_ar(), , drop = FALSE]
+    if (nrow(d)) d[1, , drop = FALSE] else NULL
+  }
+  # Bortfallet: det som inte syns bland delarna när någon del är dold, räknat som totalen minus de synliga
+  # delarna. NA när inget är dolt eller när totalen själv är dold (då går bortfallet inte att visa).
+  # Det går redan att räkna fram ur de publicerade värdena, så staplen avslöjar inget nytt.
+  dolt_rest <- function(total, delar) {
+    if (length(total) != 1 || !is.finite(total) || !anyNA(delar)) return(NA_real_)
+    r <- total - sum(delar, na.rm = TRUE)
+    if (r > 0) r else NA_real_
+  }
+  # Bortfallet i totalvyn delat i två: celler som är dolda, och synliga personer på rader där bara ena
+  # könet är dolt (radens summa kan inte visas, så de räknas inte bland raderna). Dolda + delvis = totalbortfallet.
+  # Båda delarna går att räkna ut ur publicerade värden (totalraden och synliga celler).
+  bortfall_total <- function(tot, df) {
+    summa <- plus_strikt(df$man, df$kvinnor)
+    rest <- dolt_rest(plus_strikt(tot$man, tot$kvinnor), summa)
+    if (!is.finite(rest)) return(list(dolt = NA_real_, delvis = NA_real_))
+    delvis <- sum(df$man[is.na(df$kvinnor) & !is.na(df$man)]) + sum(df$kvinnor[is.na(df$man) & !is.na(df$kvinnor)])
+    dolt <- rest - delvis
+    list(dolt = if (dolt > 0) dolt else NA_real_, delvis = if (delvis > 0) delvis else NA_real_)
+  }
+  # Strikt summa av två tal: NA om något är dolt
+  plus_strikt <- function(a, b) ifelse(is.na(a) | is.na(b), NA_real_, a + b)
 
   # ---- Arbetsmarknad: totalraden per åldersgrupp och per kön ----------------
   output$arbm_alder_diagram <- renderSvg(bredd = 10.5, hojd = 3.4, {
@@ -1014,13 +1154,13 @@ shinyServer(function(input, output, session) {
     validate(need(nrow(d) > 0, "Uppgift saknas för valt år."))
     ut <- data.frame(Åldersgrupp = snygg_alder(summakolumner),
                      Antal = as.numeric(unlist(d[1, summakolumner])), check.names = FALSE)
-    visa_tabell(ut, heltal = "Antal", dom = "t")
+    visa_tabell_dold(ut, heltal = "Antal", dom = "t")
   })
   arbm_kon_data <- reactive({
     req(input$vis_arbm %in% visaval)
     d <- totalrad("sysselsattning_kon")
     validate(need(nrow(d) > 0, "Sysselsättningsuppgift saknas för valt distrikt."))
-    d$totalt <- rowSums(d[c("man", "kvinnor")], na.rm = TRUE)
+    d$totalt <- plus_strikt(d$man, d$kvinnor)       # NA om män eller kvinnor är dolda
     d
   })
   output$arbm_kon_diagram <- renderSvg(bredd = 10.5, hojd = 3.4, {
@@ -1057,7 +1197,7 @@ shinyServer(function(input, output, session) {
     ut <- if (delat(input$vis_arbm)) {
       data.frame(År = d$ar, Män = d$man, Kvinnor = d$kvinnor, Totalt = d$totalt, check.names = FALSE)
     } else data.frame(År = d$ar, Totalt = d$totalt)
-    dt <- visa_tabell(ut, heltal = setdiff(names(ut), "År"), dom = "t", ordering = FALSE)
+    dt <- visa_tabell_dold(ut, heltal = setdiff(names(ut), "År"), dom = "t", ordering = FALSE)
     DT::formatStyle(dt, "År", target = "row",
                     backgroundColor = DT::styleEqual(valt_ar(), rd_farg$mark))
   })
@@ -1159,15 +1299,14 @@ shinyServer(function(input, output, session) {
     req(!is.null(karta_kommun), !is.null(karta_distrikt))
     d <- riktningar()
     ram <- as.list(sf::st_bbox(karta_kommun))
-    # Utsnittet beskärs något så att Dalarna fyller kartan (zoom och panorering går att ändra)
+    # Utsnittet utvidgas med en marginal så att hela länet får plats (zoom och panorering går att ändra)
     dx <- ram$xmax - ram$xmin; dy <- ram$ymax - ram$ymin
-    ram$xmin <- ram$xmin + 0.03 * dx; ram$xmax <- ram$xmax - 0.03 * dx
-    ram$ymin <- ram$ymin + 0.03 * dy; ram$ymax <- ram$ymax - 0.03 * dy
+    ram$xmin <- ram$xmin - 0.05 * dx; ram$xmax <- ram$xmax + 0.05 * dx
+    ram$ymin <- ram$ymin - 0.05 * dy; ram$ymax <- ram$ymax + 0.05 * dy
     valt <- karta_distrikt[karta_distrikt$omrade == valt_omrade(), ]
-    k <- leaflet(options = leafletOptions(minZoom = 5)) |>
-      addTiles(attribution = paste0("&copy; <a href='https://www.openstreetmap.org/copyright'>",
-                                    "OpenStreetMap</a>-bidragsgivare"),
-               options = tileOptions(className = "mattad-bakgrund")) |>
+    k <- leaflet(options = leafletOptions(minZoom = 5, zoomSnap = 0.1)) |>
+      # Ljus bakgrundskarta (rdshinyappar >= 0.0.0.9005): bara ortnamn, tonade. Fler orter syns när man zoomar in.
+      lagg_till_bakgrundskarta(etiketter = "orter", etikett_opacitet = 0.6) |>
       addPolygons(data = karta_kommun, fillColor = rd_farg$gra, fillOpacity = 0.12,
                   weight = 1, color = rd_farg$gra, opacity = 0.8,
                   label = ~kommunnamn)
@@ -1245,8 +1384,9 @@ shinyServer(function(input, output, session) {
     df <- syss_alder_urval()
     ut <- data.frame(Rad = df$etikett, df[alderskolumner], check.names = FALSE,
                      stringsAsFactors = FALSE)
-    if (length(summakolumner)) ut$Summa <- rowSums(df[summakolumner], na.rm = TRUE)
-    visa_tabell(ut, heltal = setdiff(names(ut), "Rad"))
+    # Summa är NA (–) om någon åldersgrupp är dold
+    if (length(summakolumner)) ut$Summa <- apply(df[summakolumner], 1, summa_strikt)
+    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Rad"))
   })
 
   syss_kon_urval <- reactive({
@@ -1264,22 +1404,42 @@ shinyServer(function(input, output, session) {
   # Varje rad (näringsgren eller sektor) har samma färg i alla diagram. Störst rad först.
   kat_farger <- c("#0f7090", "#54a1bd", "#f5c64f", "#5e4079", "#e98b49", "#96cfc0",
                   "#8edded", "#a63a5c", "#969696", "#0074a2", "#c9b458", "#7a9e3f")
-  rad_farger <- reactive({
-    df <- syss_kon_urval()
-    summa <- rowSums(df[c("man", "kvinnor")], na.rm = TRUE)
+  # Färger för raderna i ett block (näringsgren eller sektor) ur sysselsättningstabellen.
+  # Används av diagrammen över förvärvsarbetande och av företagsdiagrammen, så att en rad har samma färg överallt.
+  rad_farger_block <- function(block) {
+    df <- syssurval("sysselsattning_kon", block)
+    summa <- rowSums(df[c("man", "kvinnor")], na.rm = TRUE)      # bara för färgordning; dolda räknas som 0
     rader <- df$etikett[order(-summa)]
     farger <- setNames(rep_len(kat_farger, length(rader)), rader)
     # Näringsgrenar: färgkodning ur Bransch_Gxx_farger.xlsx; rader som inte går att koppla behåller sin färg
-    if (identical(input$syss_block, "naringsgren")) {
+    if (identical(block, "naringsgren")) {
       bf <- bransch_farg_for(rader)
       farger[!is.na(bf)] <- bf[!is.na(bf)]
     }
     farger
+  }
+  rad_farger <- reactive({
+    req(input$vis_syss %in% visaval)
+    rad_farger_block(input$syss_block)
   })
+  # Färg per etikett för företagsdiagram: samma färg som raden har i diagrammen över förvärvsarbetande.
+  # Näringsgrenar får färg ur färgtabellen, sektorer ur sektorblockets färger; övrigt grått.
+  farger_for_etiketter <- function(etiketter) {
+    etiketter <- as.character(etiketter)
+    f <- setNames(bransch_farg_for(etiketter), etiketter)
+    alla <- c(tryCatch(rad_farger_block("naringsgren"), error = function(e) NULL),
+              tryCatch(rad_farger_block("sektor"), error = function(e) NULL))
+    saknas <- is.na(f)
+    f[saknas] <- unname(alla[etiketter[saknas]])
+    f[is.na(f)] <- "#969696"
+    f[!duplicated(names(f))]
+  }
   # Färger för en uppsättning rader; rader som saknas i färgtabellen blir grå
   farg_for <- function(rader) {
     f <- rad_farger()[rader]
     f[is.na(f)] <- "#969696"
+    f[rader == dolt_etikett] <- dolt_farg
+    f[rader == delvis_etikett] <- delvis_farg
     setNames(unname(f), rader)
   }
   fordelning_data <- reactive({
@@ -1287,24 +1447,52 @@ shinyServer(function(input, output, session) {
     if (input$vis_fordelning == "Åldersgrupp") {
       df <- syss_alder_urval()
       validate(need(nrow(df) > 0 && length(summakolumner) > 0, "Uppgift saknas för valt urval."))
-      df[summakolumner] |>
+      lang <- df[summakolumner] |>
         mutate(etikett = df$etikett) |>
         pivot_longer(-etikett, names_to = "stapel", values_to = "antal") |>
         mutate(stapel = factor(stapel, levels = summakolumner, labels = snygg_alder(summakolumner)))
+      # Bortfall per åldersgrupp: totalen minus de synliga raderna, som en egen kategori
+      tot <- total_valt_ar("sysselsattning_alder")
+      if (!is.null(tot)) {
+        extra <- do.call(rbind, lapply(summakolumner, function(k) {
+          r <- dolt_rest(as.numeric(tot[[k]]), df[[k]])
+          if (is.finite(r)) data.frame(etikett = dolt_etikett, stapel = snygg_alder(k), antal = r, stringsAsFactors = FALSE)
+        }))
+        if (!is.null(extra)) {
+          extra$stapel <- factor(extra$stapel, levels = levels(lang$stapel))
+          lang <- rbind(as.data.frame(lang), extra)
+        }
+      }
+      lang
     } else {
       df <- syss_kon_urval()
       validate(need(nrow(df) > 0, "Uppgift saknas för valt urval."))
-      data.frame(etikett = df$etikett, Kvinnor = df$kvinnor, Män = df$man,
-                 Totalt = rowSums(df[c("man", "kvinnor")], na.rm = TRUE), check.names = FALSE) |>
+      lang <- data.frame(etikett = df$etikett, Kvinnor = df$kvinnor, Män = df$man,
+                         Totalt = plus_strikt(df$man, df$kvinnor), check.names = FALSE) |>
         pivot_longer(-etikett, names_to = "stapel", values_to = "antal") |>
         mutate(stapel = factor(stapel, levels = c("Totalt", "Män", "Kvinnor")))
+      tot <- total_valt_ar("sysselsattning_kon")
+      if (!is.null(tot)) {
+        totaler <- c(Kvinnor = tot$kvinnor, Män = tot$man, Totalt = plus_strikt(tot$man, tot$kvinnor))
+        delar <- list(Kvinnor = df$kvinnor, Män = df$man, Totalt = plus_strikt(df$man, df$kvinnor))
+        extra <- do.call(rbind, lapply(names(totaler), function(k) {
+          r <- dolt_rest(as.numeric(totaler[[k]]), delar[[k]])
+          if (is.finite(r)) data.frame(etikett = dolt_etikett, stapel = k, antal = r, stringsAsFactors = FALSE)
+        }))
+        if (!is.null(extra)) {
+          extra$stapel <- factor(extra$stapel, levels = levels(lang$stapel))
+          lang <- rbind(as.data.frame(lang), extra)
+        }
+      }
+      lang
     }
   })
   output$fordelning_diagram <- renderGirafe({
     d <- fordelning_data()
     d$antal[is.na(d$antal)] <- 0
     ordning <- names(rad_farger())
-    ordning <- c(ordning[ordning %in% d$etikett], setdiff(unique(d$etikett), ordning))
+    ordning <- okand_sist(c(ordning[ordning %in% d$etikett], setdiff(setdiff(unique(d$etikett), ordning), dolt_etikett)))
+    if (dolt_etikett %in% d$etikett) ordning <- c(ordning, dolt_etikett)      # bortfallet sist
     d$etikett <- factor(d$etikett, levels = ordning)
     d <- d |> group_by(stapel) |> mutate(andel = antal / sum(antal)) |> ungroup()
     validate(need(any(is.finite(d$andel)), "Uppgift saknas för valt urval."))
@@ -1325,7 +1513,7 @@ shinyServer(function(input, output, session) {
       labs(title = paste("Fördelning på", tolower(blocketikett(input$syss_block)), valt_ar()),
            x = "Andel av förvärvsarbetande", y = NULL,
            caption = paste("Andelarna räknas på summan av raderna; rader som överlappar ger skev fördelning.",
-                           appdata$kalla))
+                           "Dolda värden visas sammanlagt som en grå stapeldel.", appdata$kalla))
     girafe_alt(ggobj = p, width_svg = 19, height_svg = 3.2 + 0.42 * ceiling(length(ordning) / 3),
                options = giraf_val)
   })
@@ -1335,18 +1523,31 @@ shinyServer(function(input, output, session) {
   output$syss_kon_diagram <- renderGirafe({
     df <- syss_kon_urval()
     validate(need(nrow(df) > 0, "Sysselsättningsuppgift saknas för valt urval."))
-    df$summa <- rowSums(df[c("man", "kvinnor")], na.rm = TRUE)
-    ordning <- df$etikett[order(df$summa)]
+    df$summa <- plus_strikt(df$man, df$kvinnor)
+    tot <- total_valt_ar("sysselsattning_kon")
+    # Bortfall: det som inte syns bland raderna, en egen stapel längst ned
+    bf <- if (is.null(tot)) list(dolt = NA_real_, delvis = NA_real_) else bortfall_total(tot, df)
+    rest_kv <- if (is.null(tot)) NA_real_ else dolt_rest(tot$kvinnor, df$kvinnor)
+    rest_man <- if (is.null(tot)) NA_real_ else dolt_rest(tot$man, df$man)
+    ordning <- df$etikett[order(df$summa, na.last = FALSE)]          # dolda rader längst ned
+    ordning <- rev(okand_sist(rev(ordning)))                         # Okänd nedanför övriga rader
+    if (any(is.finite(c(bf$dolt, bf$delvis, rest_kv, rest_man)))) {
+      # Längst ned: dolda värden, därefter (bara i totalvyn) rader med delvis dolt kön
+      ordning <- c(dolt_etikett, if (!delat(input$vis_syss)) delvis_etikett, ordning)
+    }
     titel <- paste("Förvärvsarbetande –", tolower(blocketikett(input$syss_block)), valt_ar())
-    bildtext <- paste("Rader kan överlappa; summera inte över rader.", appdata$kalla)
+    bildtext <- paste("Rader kan överlappa; summera inte över rader. Dolda värden visas sammanlagt i en grå stapel. I totalvyn visas även synliga personer på rader där bara ena könet är dolt som en egen, mörkare grå stapel.", appdata$kalla)
     farger <- farg_for(unique(ordning))
     if (delat(input$vis_syss)) {
       df <- df |>
         select(etikett, man, kvinnor) |>
-        pivot_longer(c(man, kvinnor), names_to = "kon", values_to = "antal") |>
+        pivot_longer(c(man, kvinnor), names_to = "kon", values_to = "antal")
+      if (is.finite(rest_kv)) df <- rbind(df, data.frame(etikett = dolt_etikett, kon = "kvinnor", antal = rest_kv))
+      if (is.finite(rest_man)) df <- rbind(df, data.frame(etikett = dolt_etikett, kon = "man", antal = rest_man))
+      df <- df |>
         mutate(kon = factor(kon, levels = c("kvinnor", "man"), labels = kon_ordning),
                etikett = factor(etikett, levels = unique(ordning)))
-      df$popup <- paste0(df$etikett, "<br/>", df$kon, ": ", siffror(df$antal), " personer")
+      df$popup <- paste0(df$etikett, "<br/>", df$kon, ": ", vt(df$antal), " personer")
       # Raden ger färgen; Män visas ljusare än Kvinnor
       p <- ggplot(df, aes(etikett, antal, fill = etikett, alpha = kon)) +
         geom_col_interactive(aes(tooltip = popup, data_id = paste(etikett, kon)),
@@ -1361,8 +1562,10 @@ shinyServer(function(input, output, session) {
         labs(title = paste(titel, "– uppdelat på kön"), x = NULL, y = "Antal personer",
              caption = bildtext)
     } else {
+      if (is.finite(bf$dolt)) df <- rbind(df[c("etikett", "summa")], data.frame(etikett = dolt_etikett, summa = bf$dolt))
+      if (is.finite(bf$delvis)) df <- rbind(df[c("etikett", "summa")], data.frame(etikett = delvis_etikett, summa = bf$delvis))
       df$etikett <- factor(df$etikett, levels = unique(ordning))
-      df$popup <- paste0(df$etikett, "<br/>", siffror(df$summa), " personer")
+      df$popup <- paste0(df$etikett, "<br/>", vt(df$summa), " personer")
       p <- ggplot(df, aes(etikett, summa, fill = etikett)) +
         geom_col_interactive(aes(tooltip = popup, data_id = etikett), width = 0.68) + coord_flip() +
         scale_x_discrete(labels = scales::label_wrap(30)) +
@@ -1385,15 +1588,27 @@ shinyServer(function(input, output, session) {
                   "Cirkeldiagrammet kräver paketen rddiagram, packcircles och ggforce."))
     df <- syss_kon_urval()
     validate(need(nrow(df) > 0, "Sysselsättningsuppgift saknas för valt urval."))
-    farger <- farg_for(df$etikett)
+    farger <- farg_for(c(df$etikett, dolt_etikett, delvis_etikett))
+    tot <- total_valt_ar("sysselsattning_kon")
     if (delat(input$vis_syss)) {
       ut <- rbind(
         data.frame(bransch = df$etikett, antal = df$kvinnor, kon = kon_ordning[1], stringsAsFactors = FALSE),
         data.frame(bransch = df$etikett, antal = df$man, kon = kon_ordning[2], stringsAsFactors = FALSE))
+      # Bortfallet som en egen grå cirkel per kön
+      if (!is.null(tot)) {
+        r_kv <- dolt_rest(tot$kvinnor, df$kvinnor); r_man <- dolt_rest(tot$man, df$man)
+        if (is.finite(r_kv)) ut <- rbind(ut, data.frame(bransch = dolt_etikett, antal = r_kv, kon = kon_ordning[1]))
+        if (is.finite(r_man)) ut <- rbind(ut, data.frame(bransch = dolt_etikett, antal = r_man, kon = kon_ordning[2]))
+      }
       grupp <- "kon"
     } else {
-      ut <- data.frame(bransch = df$etikett, antal = rowSums(df[c("man", "kvinnor")], na.rm = TRUE),
-                       stringsAsFactors = FALSE)
+      summa_rad <- plus_strikt(df$man, df$kvinnor)
+      ut <- data.frame(bransch = df$etikett, antal = summa_rad, stringsAsFactors = FALSE)
+      if (!is.null(tot)) {
+        bf <- bortfall_total(tot, df)
+        if (is.finite(bf$dolt)) ut <- rbind(ut, data.frame(bransch = dolt_etikett, antal = bf$dolt))
+        if (is.finite(bf$delvis)) ut <- rbind(ut, data.frame(bransch = delvis_etikett, antal = bf$delvis))
+      }
       grupp <- NULL
     }
     ut$farg <- unname(farger[ut$bransch])
@@ -1412,7 +1627,7 @@ shinyServer(function(input, output, session) {
     # Funktionen sorterar legenden alfabetiskt. Här ersätts färgskalan så att förklaringsrutorna
     # ligger i storleksordning (störst totalt antal först, kön sammanräknade), med samma
     # färger och radbrytning som i funktionen.
-    ordning <- names(sort(tapply(ut$antal, ut$bransch, sum), decreasing = TRUE))
+    ordning <- okand_sist(names(sort(tapply(ut$antal, ut$bransch, sum), decreasing = TRUE)))
     palett <- setNames(ut$farg[match(ordning, ut$bransch)], ordning)
     etiketter <- setNames(vapply(ordning, function(x) paste(strwrap(x, width = 30), collapse = "\n"),
                                  character(1)), ordning)
@@ -1426,9 +1641,446 @@ shinyServer(function(input, output, session) {
       data.frame(Rad = df$etikett, Män = df$man, Kvinnor = df$kvinnor,
                  check.names = FALSE, stringsAsFactors = FALSE)
     } else {
-      data.frame(Rad = df$etikett, Totalt = rowSums(df[c("man", "kvinnor")], na.rm = TRUE),
+      data.frame(Rad = df$etikett, Totalt = plus_strikt(df$man, df$kvinnor),
                  check.names = FALSE, stringsAsFactors = FALSE)
     }
-    visa_tabell(ut, heltal = setdiff(names(ut), "Rad"))
+    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Rad"))
   })
+
+  # ===========================================================================
+  # Tabeller med röjandegranskning: civilstånd, sammanräknad förvärvsinkomst, hushållsstorlek,
+  # konsumtion samt företag. Dolda värden är NA i tabellerna och visas som "–" (orsaken visas inte).
+  # Staplar för dolda värden utelämnas, och inga summor räknas ut över rader i appen.
+  # ===========================================================================
+  nytt_urval <- function(tabell) {
+    req(!is.null(appdata[[tabell]]))
+    d <- appdata[[tabell]] |> filter(omrade == valt_omrade(), ar == valt_ar())
+    if ("kon" %in% names(d)) d$kon <- normalisera_kon(d$kon)
+    d
+  }
+  dolt_not <- "– betyder att uppgiften inte visas."
+  # Staplar för ett mått per rad (rader sorterade som i data, eller efter värde när sortera = TRUE)
+  ny_staplar <- function(df, etikett, varde, titel, y_titel, enhet = "", vandra = FALSE, sortera = FALSE, farger = NULL) {
+    df <- df[is.finite(df[[varde]]), , drop = FALSE]
+    nivaer <- unique(as.character(df[[etikett]]))
+    if (sortera) nivaer <- as.character(df[[etikett]])[order(df[[varde]])]
+    # Okänd sist i läsordningen. Vid liggande staplar (coord_flip) ritas första nivån nederst, så där läggs Okänd först.
+    nivaer <- if (vandra) rev(okand_sist(rev(nivaer))) else okand_sist(nivaer)
+    df$x <- factor(as.character(df[[etikett]]), levels = nivaer)
+    df$y <- df[[varde]]
+    df$popup <- paste0(df$x, "<br/>", vt(df$y), enhet)
+    p <- ggplot(df, aes(x, y)) +
+      (if (is.null(farger)) geom_col_interactive(aes(tooltip = popup, data_id = x), fill = rd_farg$primar)
+       else geom_col_interactive(aes(tooltip = popup, data_id = x, fill = x))) +
+      (if (!is.null(farger)) scale_fill_manual(values = farger, guide = "none")) +
+      scale_y_continuous(labels = siffror, expand = expansion(mult = c(0, 0.08))) +
+      tema_app() +
+      labs(title = titel, x = NULL, y = y_titel,
+           caption = paste0(appdata$kalla, ". Staplar för dolda värden utelämnas."))
+    if (vandra) p + coord_flip() else p + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  }
+
+  # ---- Befolkning: civilstånd (personer 16 år och äldre) ----
+  civil_lang <- reactive({
+    d <- nytt_urval("flytt_civilstand")
+    kol <- setdiff(names(d), c("ar", "omrade", "kon"))
+    d |> pivot_longer(all_of(kol), names_to = "civil", values_to = "antal") |>
+      mutate(civil = factor(civil, levels = c(intersect(names(civil_etiketter), kol), setdiff(kol, names(civil_etiketter)))),
+             civil_text = ifelse(as.character(civil) %in% names(civil_etiketter),
+                                 unname(civil_etiketter[as.character(civil)]), etikettera_rad(civil)))
+  })
+  output$civil_diagram <- renderSvg(bredd = 9.5, hojd = 3.6, {
+    d <- civil_lang()
+    d <- if (delat(input$vis_civil)) filter(d, kon %in% kon_ordning) else filter(d, kon == "Totalt")
+    validate(need(nrow(d) > 0 && any(is.finite(d$antal)), "Civilstånd saknas för valt urval."))
+    d$civil_text <- factor(d$civil_text, levels = unique(d$civil_text[order(d$civil)]))
+    d$popup <- paste0(d$civil_text, "<br/>", if (delat(input$vis_civil)) paste0(d$kon, ": ") else "", vt(d$antal), " personer")
+    p <- if (delat(input$vis_civil)) {
+      d$kon <- factor(d$kon, levels = kon_ordning)
+      ggplot(d, aes(civil_text, antal, fill = kon)) +
+        geom_col_interactive(aes(tooltip = popup, data_id = paste(civil_text, kon)),
+                             position = position_dodge(width = 0.8), width = 0.75, na.rm = TRUE) +
+        scale_fill_manual(values = kon_farger, name = NULL)
+    } else {
+      ggplot(d, aes(civil_text, antal)) +
+        geom_col_interactive(aes(tooltip = popup, data_id = civil_text), fill = rd_farg$primar, na.rm = TRUE)
+    }
+    p + scale_y_continuous(labels = siffror, expand = expansion(mult = c(0, 0.08))) +
+      tema_app() + theme(legend.position = if (delat(input$vis_civil)) "bottom" else "none") +
+      labs(title = paste("Civilstånd, personer 18 år och äldre", valt_ar()), x = NULL, y = "Antal personer",
+           caption = paste0(appdata$kalla, ". Staplar för dolda värden utelämnas."))
+  })
+  output$civil_tabell <- renderDT({
+    if (is.null(appdata$flytt_civilstand)) return(visa_tabell(tom_tabell()))
+    d <- civil_lang() |> filter(kon %in% c("Totalt", kon_ordning)) |>
+      select(civil, civil_text, kon, antal) |>
+      pivot_wider(names_from = kon, values_from = antal)
+    d <- d[order(d$civil), ]
+    ut <- data.frame(Civilstånd = d$civil_text, check.names = FALSE, stringsAsFactors = FALSE)
+    for (k in intersect(c("Totalt", kon_ordning), names(d))) ut[[k]] <- d[[k]]
+    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Civilstånd"), dom = "t", ordering = FALSE, pageLength = 50)
+  })
+
+  # ---- Inkomst och ekonomi: sammanräknad förvärvsinkomst per åldersgrupp ----
+  samink_urval <- reactive({
+    req(input$vis_samink %in% visaval)
+    d <- nytt_urval("sammanraknad_forv_inkomst")
+    d <- if (delat(input$vis_samink)) filter(d, kon %in% kon_ordning) else filter(d, kon == "Totalt")
+    d$aldersgrupp <- factor(d$aldersgrupp, levels = sortera_naturligt(appdata$sammanraknad_forv_inkomst$aldersgrupp))
+    d |> arrange(aldersgrupp, kon) |> mutate(aldersgrupp = as.character(aldersgrupp))
+  })
+  samink_matt <- c("Medelinkomst" = "medel_ink", "Medianinkomst" = "median_ink", "Antal personer" = "antal_ind")
+  output$samink_diagram <- renderSvg(bredd = 9.5, hojd = 3.8, {
+    req(input$samink_matt %in% unname(samink_matt))
+    d <- samink_urval()
+    m <- input$samink_matt
+    validate(need(nrow(d) > 0 && any(is.finite(d[[m]])),
+                  "Uppgift saknas för valt urval. Totalt finns bara om totalrader ingår i tabellen."))
+    enhet <- if (m == "antal_ind") " personer" else " kr"
+    d$aldersgrupp <- factor(d$aldersgrupp, levels = unique(d$aldersgrupp))
+    d$popup <- paste0(d$aldersgrupp, "<br/>", if (delat(input$vis_samink)) paste0(d$kon, ": ") else "", vt(d[[m]]), enhet)
+    p <- if (delat(input$vis_samink)) {
+      d$kon <- factor(d$kon, levels = kon_ordning)
+      ggplot(d, aes(aldersgrupp, .data[[m]], fill = kon)) +
+        geom_col_interactive(aes(tooltip = popup, data_id = paste(aldersgrupp, kon)),
+                             position = position_dodge(width = 0.8), width = 0.75, na.rm = TRUE) +
+        scale_fill_manual(values = kon_farger, name = NULL)
+    } else {
+      ggplot(d, aes(aldersgrupp, .data[[m]])) +
+        geom_col_interactive(aes(tooltip = popup, data_id = aldersgrupp), fill = rd_farg$primar, na.rm = TRUE)
+    }
+    p + scale_x_discrete(drop = FALSE) + scale_y_continuous(labels = siffror, expand = expansion(mult = c(0, 0.08))) +
+      tema_app() + theme(legend.position = if (delat(input$vis_samink)) "bottom" else "none") +
+      labs(title = paste(names(samink_matt)[match(m, samink_matt)], "– sammanräknad förvärvsinkomst", valt_ar()),
+           x = NULL, y = if (m == "antal_ind") "Antal personer" else "Kronor",
+           caption = paste0(appdata$kalla, ". Staplar för dolda värden utelämnas."))
+  })
+  output$samink_tabell <- renderDT({
+    if (is.null(appdata$sammanraknad_forv_inkomst)) return(visa_tabell(tom_tabell()))
+    d <- samink_urval()
+    ut <- data.frame(Åldersgrupp = d$aldersgrupp, check.names = FALSE, stringsAsFactors = FALSE)
+    if (delat(input$vis_samink)) ut$Kön <- d$kon
+    kol <- c(Antal = "antal_ind", Median = "median_ink", Summa = "summa_forvink", Medel = "medel_ink")
+    for (k in names(kol)) if (kol[[k]] %in% names(d)) ut[[k]] <- d[[kol[[k]]]]
+    visa_tabell_dold(ut, heltal = intersect(names(kol), names(ut)), dom = "t", ordering = FALSE, pageLength = 50)
+  })
+
+  # ---- Inkomst och ekonomi: hushållens storlek ----
+  hushallsstorlek_urval <- reactive({
+    d <- nytt_urval("storlek_hushall")
+    d[order(suppressWarnings(as.numeric(d$hushallsstorlek)), d$hushallsstorlek), ]
+  })
+  output$hushallsstorlek_diagram <- renderSvg(bredd = 9.5, hojd = 3.4, {
+    d <- hushallsstorlek_urval()
+    validate(need(nrow(d) > 0 && any(is.finite(d$storlek_hushall)), "Uppgift om hushållens storlek saknas för valt urval."))
+    ny_staplar(d, "hushallsstorlek", "storlek_hushall", paste("Antal hushåll efter antal personer i hushållet", valt_ar()),
+               "Antal hushåll", " hushåll")
+  })
+  output$hushallsstorlek_tabell <- renderDT({
+    if (is.null(appdata$storlek_hushall)) return(visa_tabell(tom_tabell()))
+    d <- hushallsstorlek_urval()
+    visa_tabell_dold(data.frame(`Personer i hushållet` = d$hushallsstorlek, `Antal hushåll` = d$storlek_hushall, check.names = FALSE),
+                     heltal = "Antal hushåll", dom = "t", ordering = FALSE, pageLength = 50)
+  })
+
+  # ---- Inkomst och ekonomi: konsumtionskostnader (Konsumentverket) ----
+  kons_namn <- c(hushallsstorlek = "Personer i hushållet", aldersgrupp = "Åldersgrupp", kon = "Kön",
+                 storlek_hushall = "Antal hushåll", antal_ind = "Antal personer",
+                 kostnad_per_manad = "Kostnad per hushåll och månad (kr)", kostnad_per_ar = "Kostnad per hushåll och år (kr)",
+                 kostnad_per_manad_tot = "Total kostnad per månad (kr)", kostnad_per_ar_tot = "Total kostnad per år (kr)",
+                 mat_per_manad = "Mat per person och månad (kr)", mat_per_ar = "Mat per person och år (kr)",
+                 hygien_per_manad = "Hygien per person och månad (kr)", hygien_per_ar = "Hygien per person och år (kr)",
+                 mat_per_manad_tot = "Total mat per månad (kr)", mat_per_ar_tot = "Total mat per år (kr)",
+                 hygien_per_manad_tot = "Total hygien per månad (kr)", hygien_per_ar_tot = "Total hygien per år (kr)")
+  kons_tabell <- function(d) {
+    d <- d[setdiff(names(d), c("ar", "omrade"))]
+    names(d) <- ifelse(names(d) %in% names(kons_namn), unname(kons_namn[names(d)]), gsub("_", " ", names(d)))
+    visa_tabell_dold(d, heltal = names(d)[vapply(d, is.numeric, logical(1))], dom = "t", ordering = FALSE, pageLength = 50)
+  }
+  output$kons_hus_tabell <- renderDT({
+    if (is.null(appdata$konsumtion_hus)) return(visa_tabell(tom_tabell()))
+    d <- nytt_urval("konsumtion_hus")
+    kons_tabell(d[order(suppressWarnings(as.numeric(d$hushallsstorlek)), d$hushallsstorlek), ])
+  })
+  output$kons_ind_tabell <- renderDT({
+    if (is.null(appdata$konsumtion_ind)) return(visa_tabell(tom_tabell()))
+    d <- nytt_urval("konsumtion_ind")
+    req(input$vis_kons %in% visaval)
+    if ("kon" %in% names(d)) d <- if (delat(input$vis_kons)) filter(d, kon %in% kon_ordning) else filter(d, kon == "Totalt")
+    if (!delat(input$vis_kons)) d <- d[setdiff(names(d), "kon")]
+    d$aldersgrupp <- factor(d$aldersgrupp, levels = sortera_naturligt(appdata$konsumtion_ind$aldersgrupp))
+    d <- d[order(d$aldersgrupp), ]
+    d$aldersgrupp <- as.character(d$aldersgrupp)
+    kons_tabell(d)
+  })
+
+  # ---- Näringsliv: företag (arbetsställen, anställda, omsättning) ----
+  ftg_klassordning <- c("0", "1-4", "5-9", "10-19", "20 +", "okand")
+  antal_anst_urval <- reactive({
+    d <- nytt_urval("antal_anstallda")
+    d$klass <- as.character(d$klass)
+    d[order(match(d$klass, c(ftg_klassordning, "totalt"), nomatch = 99)), ]
+  })
+  ftg_etikett <- function(x) ifelse(x == "okand", "Okänd", ifelse(x == "totalt", "Totalt", x))
+  output$antal_anst_diagram <- renderSvg(bredd = 9.5, hojd = 3.4, {
+    d <- antal_anst_urval() |> filter(klass != "totalt")
+    validate(need(nrow(d) > 0 && any(is.finite(d$antal_arbetsstallen)), "Uppgift om arbetsställen saknas för valt urval."))
+    d$klass <- ftg_etikett(d$klass)
+    ny_staplar(d, "klass", "antal_arbetsstallen", paste("Arbetsställen efter antal anställda", valt_ar()),
+               "Antal arbetsställen", " arbetsställen")
+  })
+  output$antal_anst_tabell <- renderDT({
+    if (is.null(appdata$antal_anstallda)) return(visa_tabell(tom_tabell()))
+    d <- antal_anst_urval()
+    visa_tabell_dold(data.frame(`Antal anställda` = ftg_etikett(d$klass), Arbetsställen = d$antal_arbetsstallen, check.names = FALSE),
+                     heltal = "Arbetsställen", dom = "t", ordering = FALSE, pageLength = 50)
+  })
+
+  ftg_matt <- c("Antal arbetsställen" = "antal_arbetsstallen", "Anställda" = "anstallda")
+  bransch_urval <- reactive({
+    d <- nytt_urval("foretag_bransch")
+    d$bransch <- as.character(d$bransch)
+    d
+  })
+  output$bransch_diagram <- renderSvg(bredd = 9.5, hojd = 5.2, {
+    req(input$bransch_matt %in% unname(ftg_matt))
+    m <- input$bransch_matt
+    d <- bransch_urval() |> filter(bransch != "totalt")
+    validate(need(nrow(d) > 0 && any(is.finite(d[[m]])), "Uppgift saknas för valt urval."))
+    d$bransch <- etikettera_rad(d$bransch)
+    ny_staplar(d, "bransch", m, paste(names(ftg_matt)[match(m, ftg_matt)], "per näringsgren", valt_ar()),
+               names(ftg_matt)[match(m, ftg_matt)], vandra = TRUE, sortera = TRUE,
+               farger = farger_for_etiketter(d$bransch))      # samma färger som i diagrammen över förvärvsarbetande
+  })
+  output$bransch_tabell <- renderDT({
+    if (is.null(appdata$foretag_bransch)) return(visa_tabell(tom_tabell()))
+    d <- bransch_urval()
+    d <- d[order(d$bransch == "totalt", d$bransch), ]
+    ut <- data.frame(Näringsgren = etikettera_rad(d$bransch), Arbetsställen = d$antal_arbetsstallen,
+                     Anställda = d$anstallda, check.names = FALSE, stringsAsFactors = FALSE)
+    visa_tabell_dold(ut, heltal = c("Arbetsställen", "Anställda"), dom = "t", ordering = FALSE, pageLength = 50)
+  })
+
+  handel_matt <- c("Antal arbetsställen" = "antal_arbetsstallen", "Anställda" = "anstallda", "Omsättning (tkr)" = "omsattning_tkr")
+  handel_urval <- reactive(nytt_urval("handel") |> mutate(grupp = as.character(grupp)))
+  output$handel_diagram <- renderSvg(bredd = 9.5, hojd = 3.6, {
+    req(input$handel_matt %in% unname(handel_matt))
+    m <- input$handel_matt
+    d <- handel_urval()
+    validate(need(nrow(d) > 0 && any(is.finite(d[[m]])), "Uppgift saknas för valt urval."))
+    d$grupp <- etikettera_rad(d$grupp)
+    ny_staplar(d, "grupp", m, paste(names(handel_matt)[match(m, handel_matt)], "– handel och restaurang", valt_ar()),
+               names(handel_matt)[match(m, handel_matt)], vandra = TRUE)
+  })
+  output$handel_tabell <- renderDT({
+    if (is.null(appdata$handel)) return(visa_tabell(tom_tabell()))
+    d <- handel_urval()
+    ut <- data.frame(Grupp = etikettera_rad(d$grupp), Arbetsställen = d$antal_arbetsstallen, Anställda = d$anstallda,
+                     `Omsättning (tkr)` = d$omsattning_tkr, check.names = FALSE, stringsAsFactors = FALSE)
+    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Grupp"), dom = "t", ordering = FALSE, pageLength = 50)
+  })
+
+  # ---- Notiser om dolda värden -----------------------------------------------
+  # Visas under ett diagram eller en tabell när något värde saknas (– eller utelämnad stapel). Orsaken
+  # (för få personer) är densamma överallt och visas inte per cell.
+  notis_text <- "– betyder att uppgiften inte visas eftersom antalet är för litet. En stapel som saknas har samma orsak."
+  har_dolda <- function(df, kol = NULL) {
+    if (is.null(df) || !nrow(df)) return(FALSE)
+    if (is.null(kol)) kol <- names(df)[vapply(df, is.numeric, logical(1))]
+    kol <- setdiff(intersect(kol, names(df)), c("ar", "rang"))
+    length(kol) > 0 && anyNA(unlist(df[kol]))
+  }
+  notis <- function(fn) renderUI({
+    har <- tryCatch(isTRUE(fn()), error = function(e) FALSE)
+    if (har) div(class = "rd-notis", notis_text)
+  })
+  output$notis_flytt_serie <- notis(function() har_dolda(befolkning_urval("Totalt")))
+  output$notis_flytt_alder_oversikt <- notis(function() har_dolda(flytt_alder_kon(), "flyttnetto"))
+  output$notis_flytt_alder_tabell <- notis(function() {
+    d <- flytt_kon_urval(input$vis_flytt_tabell)
+    # Totalraden är dold om någon åldersgrupp är dold, så en dold cell räcker
+    m <- if (identical(input$vy_flytt_tab, "Alla år") && input$flytt_tabell_matt %in% names(d))
+      input$flytt_tabell_matt else intersect(c("inflyttad", "utflyttad", "flyttnetto"), names(d))
+    har_dolda(if (identical(input$vy_flytt_tab, "Alla år")) d else d[d$ar == valt_ar(), , drop = FALSE], m)
+  })
+  output$notis_civil <- notis(function() har_dolda(civil_lang(), "antal"))
+  output$notis_utb <- notis(function() {
+    d <- utbildningsurval()
+    har_dolda(d, if (utb_andel() && utb_finns_andel()) utb_kolumner() else c(names(utbildningsnivaer), "totalt"))
+  })
+  output$notis_pend <- notis(function() har_dolda(pend_urval(input$vis_pend)))
+  output$notis_arbm_alder <- notis(function() {
+    d <- total_valt_ar("sysselsattning_alder"); !is.null(d) && anyNA(unlist(d[summakolumner]))
+  })
+  output$notis_arbm_kon <- notis(function() har_dolda(arbm_kon_data(), c("man", "kvinnor", "totalt")))
+  output$notis_syss_alder <- notis(function() har_dolda(syss_alder_urval(), summakolumner))
+  output$notis_syss_kon <- notis(function() har_dolda(syss_kon_urval(), c("man", "kvinnor")))
+  output$notis_ink <- notis(function() har_dolda(inkomsturval(), c("antal_ind", "median_ink", "medel_ink")))
+  output$notis_hushall <- notis(function() har_dolda(hushallurval(), c("antal_hus", "medel_ink", "median_ink")))
+  output$notis_ekstandard <- notis(function() har_dolda(ekstandardurval(), c("antal_hus", "tot_hus", "andel")))
+  output$notis_samink <- notis(function() har_dolda(samink_urval(), c("antal_ind", "median_ink", "medel_ink", "summa_forvink")))
+  output$notis_hushallsstorlek <- notis(function() har_dolda(hushallsstorlek_urval(), "storlek_hushall"))
+  output$notis_kons <- notis(function() har_dolda(nytt_urval("konsumtion_hus")) || har_dolda(nytt_urval("konsumtion_ind")))
+  output$notis_antal_anst <- notis(function() har_dolda(antal_anst_urval(), "antal_arbetsstallen"))
+  output$notis_bransch <- notis(function() har_dolda(bransch_urval(), c("antal_arbetsstallen", "anstallda")))
+  output$notis_handel <- notis(function() har_dolda(handel_urval(), c("antal_arbetsstallen", "anstallda", "omsattning_tkr")))
+
+  # ---- Jämför på karta --------------------------------------------------------
+  # Distrikten färgsätts efter värdet på valt mått (valt år). Dolda eller saknade värden är grå.
+  # Alla mått är medelvärden, medianer, andelar eller kvoter (se kartindikatorer i global.R).
+  # Värdena räknas med NA-säkra operationer: är någon ingående cell dold blir resultatet NA.
+  kart_varden <- reactive({
+    req(input$kart_indikator %in% unlist(kartindikatorer))
+    a <- valt_ar(); id <- input$kart_indikator
+    alla <- appdata$omraden["omrade"]
+    ut <- switch(id,
+                 k_medel_ink = , k_median_ink = {
+                   validate(need(!is.null(appdata$hushall_inkomst), "Tabellen hushall_inkomst saknas."))
+                   d <- appdata$hushall_inkomst; d <- d[d$ar == a, , drop = FALSE]
+                   data.frame(omrade = d$omrade, varde = d[[sub("^k_", "", id)]])
+                 },
+                 k_flyttnetto_per = {
+                   d <- appdata$flytt_summering; d <- d[d$ar == a, , drop = FALSE]
+                   data.frame(omrade = d$omrade, varde = ifelse(d$befolkning > 0, d$flyttnetto / d$befolkning * 1000, NA_real_))
+                 },
+                 k_bef_forandring = {
+                   validate(need(!is.null(appdata$flytt_serie_ar), "Tabellen flytt_serie_ar saknas."))
+                   d <- appdata$flytt_serie_ar
+                   fg <- d[d$ar == a - 1, c("omrade", "befolkning")]; names(fg)[2] <- "foregaende"
+                   nu <- d[d$ar == a, c("omrade", "befolkning")]
+                   m <- merge(nu, fg, by = "omrade")
+                   data.frame(omrade = m$omrade, varde = ifelse(m$foregaende > 0, (m$befolkning / m$foregaende - 1) * 100, NA_real_))
+                 },
+                 k_dag_natt = {
+                   d <- appdata$pendling
+                   validate(need(!is.null(d) && all(c("dagbef", "nattbef") %in% names(d)),
+                                 "Pendlingstabellen saknar dagbef och nattbef."))
+                   d <- d[d$ar == a & d$kon == "Totalt", , drop = FALSE]   # Totalraden används, inga kön summeras ihop
+                   data.frame(omrade = d$omrade, varde = ifelse(d$nattbef > 0, d$dagbef / d$nattbef * 100, NA_real_))
+                 },
+                 k_eftergym = {
+                   d <- appdata$utbildning
+                   validate(need("andel_eftergymnasial" %in% names(d),
+                                 "Andel eftergymnasial saknas. Kör om roj_alla och läs in ale.utbildning på nytt."))
+                   d <- d[d$ar == a & d$kon == "Totalt", , drop = FALSE]
+                   v <- d$andel_eftergymnasial * 100                 # publicerad, röjandegranskad andel
+                   f <- hamta_flaggor("utbildning")                  # rang_ok = FALSE: för litet underlag för jämförelse
+                   if (!is.null(f) && "rang_ok" %in% names(f)) {
+                     ok <- f$rang_ok[match(paste(d$ar, d$omrade, d$kon), paste(f$ar, f$omrade, f$kon))]
+                     v[!(ok %in% TRUE)] <- NA_real_
+                   }
+                   data.frame(omrade = d$omrade, varde = v)
+                 },
+                 k_bil_elektrifierade = , k_bil_laddbara = , k_bil_el = {
+                   validate(need(!is.null(appdata$bilar_distrikt), "Tabellen bilar_distrikt saknas."))
+                   m <- sub("^k_bil_", "", id)
+                   d <- appdata$bilar_distrikt; ar <- bilar_ar(); d <- d[d$ar == ar, , drop = FALSE]
+                   kol <- intersect(paste0("personbilar_", bilar_matt_kolumner[[m]]), names(d))
+                   alla_k <- intersect(bilar_kolumner, names(d))
+                   # rowSums utan na.rm: NA om någon drivmedelsgrupp är dold
+                   tot <- rowSums(d[alla_k]); del <- rowSums(d[kol])
+                   data.frame(omrade = d$omrade, varde = ifelse(tot > 0, del / tot * 100, NA_real_))
+                 })
+    ut$varde[!is.finite(ut$varde)] <- NA_real_
+    out <- merge(appdata$omraden[c("omrade", "namn")], ut, by = "omrade", all.x = TRUE)
+    out$valt <- out$omrade == valt_omrade()
+    out
+  })
+  kart_info <- reactive(kartindikator_info[[input$kart_indikator]])
+  kart_titel <- reactive(names(unlist(kartindikatorer))[match(input$kart_indikator, unlist(kartindikatorer))] |>
+                           sub(pattern = "^[^.]*\\.", replacement = ""))
+  kart_format <- function(x, info) {
+    ifelse(is.na(x), "–", paste(formatC(x, format = "f", digits = info$dec, big.mark = " ", decimal.mark = ","),
+                                if (info$enhet == "%") "%" else info$enhet))
+  }
+  # Palett: sammanhängande blå gradient; om värdena går över noll (flyttnetto, förändring) används en
+  # skala som divergerar kring noll (orange under, blå över), så att tillväxt och minskning syns.
+  # Bakgrundskartan är ljusgrå, så skalorna börjar vid en tydligt blå ton (inte nästan vit) och slutar
+  # i mörkt blått. Saknade värden får en mellangrå ton som syns mot bakgrunden men inte läses som en nivå.
+  kart_na_farg <- "#a6a6a6"
+  kart_gransfarg <- "#4a4a4a"
+  kart_palett <- function(v, reverse = FALSE) {
+    v <- v[is.finite(v)]
+    if (!length(v)) return(NULL)
+    if (min(v) < 0 && max(v) > 0) {
+      m <- max(abs(v))
+      colorNumeric(c("#d98c1f", "#f4d7a1", "#fbfbfb", "#8cc3dc", "#0b5f82"), domain = c(-m, m), na.color = kart_na_farg, reverse = reverse)
+    } else {
+      colorNumeric(c("#a8d8ea", "#3d9cc0", "#0b5f82", "#06384f"), domain = range(v), na.color = kart_na_farg, reverse = reverse)
+    }
+  }
+  output$jamfor_kartstatus <- renderUI({
+    d <- kart_varden()
+    n_dolt <- sum(is.na(d$varde))
+    if (n_dolt == nrow(d)) {
+      div(class = "alert alert-warning", "Inga värden finns för valt år och mått.")
+    } else if (n_dolt > 0) {
+      div(class = "rd-notis", paste0(n_dolt, " av ", nrow(d), " distrikt saknar värde (dolt eller saknas) och är grå på kartan."))
+    }
+  })
+  # Ritar distrikten (fyllning efter färg, tydlig mörk gräns) och valt distrikt med kraftig kantlinje
+  # Genomskinlighet på distriktsfärgerna (1 = helt täckande). Första sidans karta har 0,35; här behövs mer
+  # färg för att skalan ska gå att läsa, men bakgrundskartan ska synas igenom.
+  kart_fyllning <- 0.65
+  jamfor_rita_ytor <- function(karta, ytor, farg, etikett, valt) {
+    karta <- clearGroup(clearGroup(karta, "jamfor"), "jamfor_valt")
+    karta <- addPolygons(karta, data = ytor, layerId = paste0("j_", ytor$omrade), group = "jamfor",
+                         fillColor = farg, fillOpacity = kart_fyllning, weight = 0.8, color = kart_gransfarg, opacity = 0.75,
+                         label = etikett,
+                         highlightOptions = highlightOptions(weight = 2, color = "#000000", bringToFront = FALSE),
+                         options = pathOptions(pane = "pane_jamfor"))
+    v <- ytor[ytor$omrade == valt, ]
+    if (nrow(v) == 1) {
+      karta <- addPolygons(karta, data = v, group = "jamfor_valt", fill = FALSE, weight = 3.5,
+                           color = "#ffffff", opacity = 1, options = pathOptions(pane = "pane_jamfor_valt", interactive = FALSE))
+      karta <- addPolygons(karta, data = v, group = "jamfor_valt", fill = FALSE, weight = 2,
+                           color = rd_farg$bla_djup, opacity = 1, dashArray = NULL,
+                           options = pathOptions(pane = "pane_jamfor_valt", interactive = FALSE))
+    }
+    karta
+  }
+  output$jamfor_karta <- renderLeaflet({
+    req(!is.null(karta_distrikt))
+    ram <- as.list(sf::st_bbox(karta_distrikt))
+    dx <- ram$xmax - ram$xmin; dy <- ram$ymax - ram$ymin
+    k <- leaflet(options = leafletOptions(minZoom = 5, zoomSnap = 0.1)) |>
+      addMapPane("pane_jamfor", zIndex = 410) |>
+      addMapPane("pane_jamfor_valt", zIndex = 420) |>
+      lagg_till_bakgrundskarta(etiketter = "orter", etikett_opacitet = 0.6)
+    # Distriktsgränser och valt distrikt ritas redan från start; färgerna läggs på av observeraren nedan
+    k <- jamfor_rita_ytor(k, karta_distrikt, rep(kart_na_farg, nrow(karta_distrikt)),
+                          paste0(karta_distrikt$namn, " (", karta_distrikt$omrade, ")"), isolate(valt_omrade()))
+    fitBounds(k, ram$xmin - 0.05 * dx, ram$ymin - 0.05 * dy, ram$xmax + 0.05 * dx, ram$ymax + 0.05 * dy)
+  })
+  # Färgerna ritas om via proxy när mått, år eller valt distrikt ändras (kartans läge ändras inte)
+  observe({
+    req(!is.null(karta_distrikt))
+    d <- kart_varden(); info <- kart_info()
+    pal <- kart_palett(d$varde)
+    ytor <- karta_distrikt
+    ytor$varde <- d$varde[match(ytor$omrade, d$omrade)]
+    ytor$etikett <- paste0(ytor$namn, " (", ytor$omrade, "): ", kart_format(ytor$varde, info))
+    farg <- if (is.null(pal)) rep(kart_na_farg, nrow(ytor)) else pal(ytor$varde)
+    p <- leafletProxy("jamfor_karta") |> clearControls()
+    p <- jamfor_rita_ytor(p, ytor, farg, ytor$etikett, valt_omrade())
+    # Teckenförklaring: skalan med högsta värdet överst (leaflet lägger annars lägsta överst), och
+    # "Dolt eller saknas" som en egen liten ruta under skalan i stället för bredvid den.
+    vf <- ytor$varde[is.finite(ytor$varde)]
+    if (anyNA(ytor$varde)) {
+      p <- addLegend(p, position = "bottomright", colors = kart_na_farg, labels = "Dolt eller saknas", opacity = 0.9)
+    }
+    if (!is.null(pal)) {
+      enhet <- if (info$enhet == "%") "%" else info$enhet
+      p <- addLegend(p, position = "bottomright", pal = kart_palett(d$varde, reverse = TRUE), values = vf, opacity = 0.9,
+                     bins = 5,
+                     title = paste0(kart_titel(), "<br/><small>", valt_ar(), ", ", enhet, "</small>"),
+                     labFormat = labelFormat(big.mark = " ", digits = info$dec,
+                                             transform = function(x) sort(x, decreasing = TRUE)))
+    }
+  })
+  observeEvent(input$jamfor_karta_shape_click, {
+    id <- sub("^j_", "", input$jamfor_karta_shape_click$id %||% "")
+    if (id %in% appdata$omraden$omrade) updateSelectInput(session, "omrade", selected = id)
+  })
+  output$notis_jamfor_karta <- notis(function() anyNA(kart_varden()$varde))
 })
