@@ -164,7 +164,7 @@ shinyServer(function(input, output, session) {
     ordning <- intersect(c("Totalt", kon_ordning), names(per_kon))
     grupper <- if (delat(input$vis_flytt)) per_kon[intersect(kon_ordning, ordning)] else per_kon["Totalt"]
     grupperad_tabell(data.frame(Åldersgrupp = c(ag, "Totalt")), grupper,
-                     fet_rad = c("Åldersgrupp", "Totalt"), dom = "t", ordering = FALSE, pageLength = 50)
+                     fet_rad = c("Åldersgrupp", "Totalt"), gruppfarger = kon_farger, dom = "t", ordering = FALSE, pageLength = 50)
   })
   # Valt år: inflyttade, utflyttade och flyttnetto som tre kolumner per kön, en rad per åldersgrupp.
   output$flytt_alder_valt_ar <- renderDT({
@@ -188,7 +188,7 @@ shinyServer(function(input, output, session) {
       rbind(ut, as.data.frame(lapply(ut, summa_strikt), check.names = FALSE))
     })
     grupperad_tabell(data.frame(Åldersgrupp = c(ag, "Totalt")), grupper,
-                     fet_rad = c("Åldersgrupp", "Totalt"), dom = "t", ordering = FALSE, pageLength = 50)
+                     fet_rad = c("Åldersgrupp", "Totalt"), gruppfarger = kon_farger, dom = "t", ordering = FALSE, pageLength = 50)
   })
   output$flytt_alder_tabell <- renderDT({
     if (is.null(appdata$flytt_alder)) return(visa_tabell(tom_tabell()))
@@ -220,7 +220,7 @@ shinyServer(function(input, output, session) {
         x[match(ag, x$aldersgrupp), arskol, drop = FALSE]
       })
       return(grupperad_tabell(data.frame(Åldersgrupp = ag), grupper, markera = as.character(valt_ar()),
-                              fet_rad = c("Åldersgrupp", "Totalt"), dom = "t", ordering = FALSE, pageLength = 50))
+                              fet_rad = c("Åldersgrupp", "Totalt"), gruppfarger = kon_farger, dom = "t", ordering = FALSE, pageLength = 50))
     }
     names(ut)[1:2] <- c("Kön", "Åldersgrupp")
     ut <- ut[-1]
@@ -365,7 +365,7 @@ shinyServer(function(input, output, session) {
       scale_y_continuous(labels = siffror, breaks = yax$breaks, minor_breaks = yax$minor) +
       coord_cartesian(ylim = yax$ylim, expand = FALSE) +
       tema_app() + theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom") +
-      labs(title = if (delad) "Befolkningsutveckling, uppdelat på kön" else "Befolkningsutveckling",
+      labs(title = NULL,
            subtitle = undertext(serie_not(df), axel_not(yax)), x = NULL, y = "Antal invånare",
            caption = appdata$kalla)
     p
@@ -387,7 +387,7 @@ shinyServer(function(input, output, session) {
       scale_y_continuous(labels = siffror, breaks = yax$breaks, minor_breaks = yax$minor) +
       coord_cartesian(ylim = yax$ylim, expand = FALSE) +
       tema_app() + theme(legend.position = "bottom", axis.text.x = element_text(angle = 45, hjust = 1)) +
-      labs(title = "Inflyttade och utflyttade",
+      labs(title = NULL,
            subtitle = undertext(axel_not(yax)),
            x = NULL, y = "Antal personer", caption = appdata$kalla)
   })
@@ -401,6 +401,7 @@ shinyServer(function(input, output, session) {
     df <- setNames(as.data.frame(df)[names(kol)], unname(kol))
     dt <- visa_tabell_dold(df, heltal = setdiff(names(df), "År"),
                            dom = "t", ordering = FALSE, pageLength = 50)
+    dt <- kon_bakgrund(dt, names(df), markera_kol = "År", markera_varde = valt_ar())   # Män och Kvinnor i sina färger, valt år starkare
     # Valt år markeras
     DT::formatStyle(dt, "År", target = "row",
                     backgroundColor = DT::styleEqual(valt_ar(), rd_farg$mark),
@@ -549,6 +550,7 @@ shinyServer(function(input, output, session) {
       geom_col_interactive(aes(tooltip = popup, data_id = omrade)) + coord_flip() +
       scale_fill_manual(values = c("FALSE" = rd_farg$ljus, "TRUE" = rd_farg$bla_djup),
                         guide = "none") +
+      scale_y_continuous(labels = siffror, expand = expansion(mult = c(0, 0.05))) +
       theme_minimal(base_size = 12) +
       labs(title = names(indikatornamn)[match(input$indikator, indikatornamn)],
            x = NULL, y = if (input$indikator %in% c("medel_ink", "median_ink")) "Kronor" else "Antal",
@@ -796,7 +798,8 @@ shinyServer(function(input, output, session) {
     for (i in seq_along(kol)) ut[[unname(utbildningsnivaer)[i]]] <- if (andel) d[[kol[i]]] * 100 else d[[kol[i]]]
     if (!andel) ut$Totalt <- d$totalt
     if (andel) names(ut)[-1] <- paste0(names(ut)[-1], " (%)")
-    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Kön"), decimaler = if (andel) 1 else 0, dom = "t", ordering = FALSE)
+    kon_bakgrund(visa_tabell_dold(ut, heltal = setdiff(names(ut), "Kön"), decimaler = if (andel) 1 else 0, dom = "t", ordering = FALSE),
+                 radkol = "Kön")
   })
 
   output$kartstatus <- renderUI({
@@ -812,6 +815,14 @@ shinyServer(function(input, output, session) {
     sf::st_transform(appdata$distrikt, 4326)
   karta_kommun <- if (is.null(appdata$kommun)) NULL else
     sf::st_transform(appdata$kommun, 4326)
+  # Dalarnas kommuner plus de kommuner utanför Dalarna som är pendlingsmål (utanfor = TRUE)
+  karta_kommun_alla <- if (is.null(karta_kommun)) NULL else {
+    dal <- karta_kommun[c("kommunkod", "kommunnamn")]; dal$utanfor <- FALSE
+    if (is.null(appdata$kommun_utanfor)) dal else {
+      ut <- sf::st_transform(appdata$kommun_utanfor, 4326)[c("kommunkod", "kommunnamn")]; ut$utanfor <- TRUE
+      rbind(dal, ut)
+    }
+  }
   if (!is.null(karta_distrikt)) {
     karta_distrikt$namn <- appdata$omraden$namn[match(karta_distrikt$omrade, appdata$omraden$omrade)]
   }
@@ -1007,7 +1018,8 @@ shinyServer(function(input, output, session) {
         x <- d[d$kon == k, , drop = FALSE]
         setNames(x[match(ag, x$aldersgrupp), unname(kol), drop = FALSE], names(kol))
       })
-      return(grupperad_tabell(data.frame(Åldersgrupp = ag), grupper, dom = "t", ordering = FALSE, pageLength = 50))
+      return(grupperad_tabell(data.frame(Åldersgrupp = ag), grupper, gruppfarger = kon_farger,
+                              dom = "t", ordering = FALSE, pageLength = 50))
     }
     visa_tabell(d, heltal = c("antal_ind", "median_ink", "medel_ink"))
   })
@@ -1187,8 +1199,7 @@ shinyServer(function(input, output, session) {
       scale_y_continuous(labels = siffror, expand = expansion(mult = c(0, 0.05))) +
       tema_app() +
       theme(legend.position = if (delat(input$vis_arbm)) "bottom" else "none") +
-      labs(title = paste("Förvärvsarbetande per år –",
-                         if (delat(input$vis_arbm)) "uppdelat på kön" else "Totalt"),
+      labs(title = NULL,          # rubriken står i kortet
            x = NULL, y = "Antal personer", caption = appdata$kalla)
   })
   output$arbm_kon_tabell <- renderDT({
@@ -1197,7 +1208,8 @@ shinyServer(function(input, output, session) {
     ut <- if (delat(input$vis_arbm)) {
       data.frame(År = d$ar, Män = d$man, Kvinnor = d$kvinnor, Totalt = d$totalt, check.names = FALSE)
     } else data.frame(År = d$ar, Totalt = d$totalt)
-    dt <- visa_tabell_dold(ut, heltal = setdiff(names(ut), "År"), dom = "t", ordering = FALSE)
+    dt <- kon_bakgrund(visa_tabell_dold(ut, heltal = setdiff(names(ut), "År"), dom = "t", ordering = FALSE), names(ut),
+                       markera_kol = "År", markera_varde = valt_ar())
     DT::formatStyle(dt, "År", target = "row",
                     backgroundColor = DT::styleEqual(valt_ar(), rd_farg$mark))
   })
@@ -1267,16 +1279,25 @@ shinyServer(function(input, output, session) {
     d <- d[order(d$rang), , drop = FALSE]
     # Koppla till kommungeometrin via kommunkod, annars via namn
     d$idx <- NA_integer_
-    if (!is.null(karta_kommun)) {
-      pa_kod <- !is.na(d$kommunkod) & d$kommunkod %in% karta_kommun$kommunkod
-      d$idx[pa_kod] <- match(d$kommunkod[pa_kod], karta_kommun$kommunkod)
-      namn_kartan <- normalisera_namn(karta_kommun$kommunnamn)
-      rest <- is.na(d$idx) & !is.na(d$kommunnamn)
-      d$idx[rest] <- match(normalisera_namn(d$kommunnamn[rest]), namn_kartan)
+    idx_dal <- rep(NA_integer_, nrow(d))
+    if (!is.null(karta_kommun_alla)) {
+      koppla <- function(kartan) {
+        i <- rep(NA_integer_, nrow(d))
+        pa_kod <- !is.na(d$kommunkod) & d$kommunkod %in% kartan$kommunkod
+        i[pa_kod] <- match(d$kommunkod[pa_kod], kartan$kommunkod)
+        rest <- is.na(i) & !is.na(d$kommunnamn)
+        i[rest] <- match(normalisera_namn(d$kommunnamn[rest]), normalisera_namn(kartan$kommunnamn))
+        i
+      }
+      d$idx <- koppla(karta_kommun_alla)
+      idx_dal <- koppla(karta_kommun)
     }
-    d$visning <- ifelse(!is.na(d$kommunnamn), d$kommunnamn,
-                        ifelse(!is.na(d$idx) & !is.na(karta_kommun$kommunnamn[d$idx]),
-                               karta_kommun$kommunnamn[d$idx], d$kommunkod))
+    # Utanför Dalarna = går inte att koppla till Dalarnas kommuner
+    d$utanfor <- if (is.null(karta_kommun)) FALSE else is.na(idx_dal)
+    grundnamn <- ifelse(!is.na(d$kommunnamn), d$kommunnamn,
+                        ifelse(!is.na(d$idx) & !is.na(karta_kommun_alla$kommunnamn[d$idx]),
+                               karta_kommun_alla$kommunnamn[d$idx], d$kommunkod))
+    d$visning <- paste0(grundnamn, ifelse(d$utanfor, " (utanför Dalarna)", ""))
     d
   })
   output$pendling_karta_status <- renderUI({
@@ -1292,13 +1313,18 @@ shinyServer(function(input, output, session) {
     if (!is.null(d) && any(is.na(d$idx))) {
       div(class = "alert alert-info", paste0(
         "Kunde inte placera på kartan: ", paste(d$visning[is.na(d$idx)], collapse = ", "),
-        ". Kommunen ligger utanför Dalarna eller går inte att koppla till kommungeometrin."))
+        ". Geometri för kommunen saknas, så den visas bara i tabellen och teckenförklaringen."))
     }
   })
   output$pendling_karta <- renderLeaflet({
     req(!is.null(karta_kommun), !is.null(karta_distrikt))
     d <- riktningar()
-    ram <- as.list(sf::st_bbox(karta_kommun))
+    # Utsnittet omfattar länet och de valda pendlingsmålen, även de som ligger utanför Dalarna
+    bb <- sf::st_bbox(karta_kommun)
+    valda <- karta_kommun_alla[stats::na.omit(d$idx), ]
+    if (nrow(valda)) { b2 <- sf::st_bbox(valda); bb <- c(xmin = min(bb[["xmin"]], b2[["xmin"]]), ymin = min(bb[["ymin"]], b2[["ymin"]]),
+                                                         xmax = max(bb[["xmax"]], b2[["xmax"]]), ymax = max(bb[["ymax"]], b2[["ymax"]])) }
+    ram <- as.list(bb)
     # Utsnittet utvidgas med en marginal så att hela länet får plats (zoom och panorering går att ändra)
     dx <- ram$xmax - ram$xmin; dy <- ram$ymax - ram$ymin
     ram$xmin <- ram$xmin - 0.05 * dx; ram$xmax <- ram$xmax + 0.05 * dx
@@ -1312,7 +1338,7 @@ shinyServer(function(input, output, session) {
                   label = ~kommunnamn)
     # De tre största riktningarna, i rangordning
     for (r in which(!is.na(d$idx))) {
-      k <- addPolygons(k, data = karta_kommun[d$idx[r], ], fillColor = riktning_farger[d$rang[r]],
+      k <- addPolygons(k, data = karta_kommun_alla[d$idx[r], ], fillColor = riktning_farger[d$rang[r]],
                        fillOpacity = 0.8, weight = 2, color = rd_farg$primar_mork, opacity = 1,
                        label = paste0(d$rang[r], ". ", d$visning[r],
                                       if (is.finite(d$antal[r])) paste0(": ", siffror(d$antal[r]), " personer") else ""))
@@ -1326,7 +1352,7 @@ shinyServer(function(input, output, session) {
     }
     etiketter <- paste0(d$rang, ". ", d$visning,
                         ifelse(is.finite(d$antal), paste0(" (", siffror(d$antal), ")"), ""),
-                        ifelse(is.na(d$idx), " – utanför kartan", ""))
+                        ifelse(is.na(d$idx), " – saknar kartgeometri", ""))
     k <- addLegend(k, position = "topright", colors = c(distrikt_farg, riktning_farger[d$rang]),
                    labels = c("Valt distrikt", etiketter), opacity = 1,
                    title = "Största utpendling")
@@ -1365,7 +1391,7 @@ shinyServer(function(input, output, session) {
                           x[match(matt_ordning, x$matt), arskol, drop = FALSE]
                         })
       return(grupperad_tabell(data.frame(Mått = matt_ordning), grupper, markera = as.character(valt_ar()),
-                              dom = "t", ordering = FALSE, pageLength = 50))
+                              gruppfarger = kon_farger, dom = "t", ordering = FALSE, pageLength = 50))
     }
     names(bred)[1:2] <- c("Kön", "Mått")
     bred <- bred[-1]
@@ -1644,7 +1670,7 @@ shinyServer(function(input, output, session) {
       data.frame(Rad = df$etikett, Totalt = plus_strikt(df$man, df$kvinnor),
                  check.names = FALSE, stringsAsFactors = FALSE)
     }
-    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Rad"))
+    kon_bakgrund(visa_tabell_dold(ut, heltal = setdiff(names(ut), "Rad")), names(ut))
   })
 
   # ===========================================================================
@@ -1718,7 +1744,8 @@ shinyServer(function(input, output, session) {
     d <- d[order(d$civil), ]
     ut <- data.frame(Civilstånd = d$civil_text, check.names = FALSE, stringsAsFactors = FALSE)
     for (k in intersect(c("Totalt", kon_ordning), names(d))) ut[[k]] <- d[[k]]
-    visa_tabell_dold(ut, heltal = setdiff(names(ut), "Civilstånd"), dom = "t", ordering = FALSE, pageLength = 50)
+    kon_bakgrund(visa_tabell_dold(ut, heltal = setdiff(names(ut), "Civilstånd"), dom = "t", ordering = FALSE, pageLength = 50),
+                 names(ut))
   })
 
   # ---- Inkomst och ekonomi: sammanräknad förvärvsinkomst per åldersgrupp ----
@@ -1762,13 +1789,14 @@ shinyServer(function(input, output, session) {
     if (delat(input$vis_samink)) ut$Kön <- d$kon
     kol <- c(Antal = "antal_ind", Median = "median_ink", Summa = "summa_forvink", Medel = "medel_ink")
     for (k in names(kol)) if (kol[[k]] %in% names(d)) ut[[k]] <- d[[kol[[k]]]]
-    visa_tabell_dold(ut, heltal = intersect(names(kol), names(ut)), dom = "t", ordering = FALSE, pageLength = 50)
+    kon_bakgrund(visa_tabell_dold(ut, heltal = intersect(names(kol), names(ut)), dom = "t", ordering = FALSE, pageLength = 50),
+                 radkol = "Kön")
   })
 
   # ---- Inkomst och ekonomi: hushållens storlek ----
   hushallsstorlek_urval <- reactive({
     d <- nytt_urval("storlek_hushall")
-    d[order(suppressWarnings(as.numeric(d$hushallsstorlek)), d$hushallsstorlek), ]
+    d[order(suppressWarnings(as.numeric(sub("^(\\d+).*$", "\\1", d$hushallsstorlek))), d$hushallsstorlek), ]   # sammanslagna grupper ("5+", "3-4") sorteras på första talet
   })
   output$hushallsstorlek_diagram <- renderSvg(bredd = 9.5, hojd = 3.4, {
     d <- hushallsstorlek_urval()
@@ -1792,26 +1820,58 @@ shinyServer(function(input, output, session) {
                  hygien_per_manad = "Hygien per person och månad (kr)", hygien_per_ar = "Hygien per person och år (kr)",
                  mat_per_manad_tot = "Total mat per månad (kr)", mat_per_ar_tot = "Total mat per år (kr)",
                  hygien_per_manad_tot = "Total hygien per månad (kr)", hygien_per_ar_tot = "Total hygien per år (kr)")
+  # Konsumtionstabellerna visar bara årsbelopp per grupp, och en totalrad för hela distriktet längst ned.
+  # Totalraden är summan över grupperna (strikt: NA, alltså –, om någon grupp är dold, så att en delsumma
+  # inte visas som om den vore hela summan). Kostnad per hushåll/person i totalraden är totalen delad
+  # med antalet, alltså ett vägt genomsnitt.
+  kons_med_total <- function(d, etikett, antal_kol, summakol, snitt, grupp = NULL) {
+    d[[etikett]] <- as.character(d[[etikett]])
+    bygg <- function(x) {
+      tot <- x[1, , drop = FALSE]
+      for (k in setdiff(names(tot), etikett)) tot[[k]] <- NA
+      tot[[etikett]] <- "Totalt"
+      if (!is.null(grupp)) tot[[grupp]] <- x[[grupp]][1]
+      for (k in c(antal_kol, summakol)) tot[[k]] <- summa_strikt(x[[k]])
+      for (k in names(snitt)) {
+        n <- tot[[antal_kol]]; t <- tot[[snitt[[k]]]]
+        tot[[k]] <- if (is.finite(n) && is.finite(t) && n > 0) round(t / n) else NA_real_
+      }
+      rbind(x, tot)
+    }
+    if (is.null(grupp)) bygg(d) else do.call(rbind, lapply(split(d, factor(d[[grupp]], levels = unique(d[[grupp]]))), bygg))
+  }
   kons_tabell <- function(d) {
     d <- d[setdiff(names(d), c("ar", "omrade"))]
     names(d) <- ifelse(names(d) %in% names(kons_namn), unname(kons_namn[names(d)]), gsub("_", " ", names(d)))
-    visa_tabell_dold(d, heltal = names(d)[vapply(d, is.numeric, logical(1))], dom = "t", ordering = FALSE, pageLength = 50)
+    dt <- visa_tabell_dold(d, heltal = names(d)[vapply(d, is.numeric, logical(1))], dom = "t", ordering = FALSE, pageLength = 50)
+    dt <- DT::formatStyle(dt, names(d)[1], target = "row", fontWeight = DT::styleEqual("Totalt", "bold"))
+    if ("Kön" %in% names(d)) dt <- kon_bakgrund(dt, radkol = "Kön")
+    dt
   }
   output$kons_hus_tabell <- renderDT({
     if (is.null(appdata$konsumtion_hus)) return(visa_tabell(tom_tabell()))
     d <- nytt_urval("konsumtion_hus")
-    kons_tabell(d[order(suppressWarnings(as.numeric(d$hushallsstorlek)), d$hushallsstorlek), ])
+    d <- d[order(suppressWarnings(as.numeric(sub("^(\\d+).*$", "\\1", d$hushallsstorlek))), d$hushallsstorlek), ]   # sammanslagna grupper ("5+", "3-4") sorteras på första talet
+    kol <- intersect(c("hushallsstorlek", "storlek_hushall", "kostnad_per_ar", "kostnad_per_ar_tot"), names(d))
+    d <- d[kol]
+    kons_tabell(kons_med_total(d, "hushallsstorlek", "storlek_hushall", "kostnad_per_ar_tot",
+                               snitt = c(kostnad_per_ar = "kostnad_per_ar_tot")))
   })
   output$kons_ind_tabell <- renderDT({
     if (is.null(appdata$konsumtion_ind)) return(visa_tabell(tom_tabell()))
     d <- nytt_urval("konsumtion_ind")
     req(input$vis_kons %in% visaval)
     if ("kon" %in% names(d)) d <- if (delat(input$vis_kons)) filter(d, kon %in% kon_ordning) else filter(d, kon == "Totalt")
-    if (!delat(input$vis_kons)) d <- d[setdiff(names(d), "kon")]
+    delad <- delat(input$vis_kons) && "kon" %in% names(d)
     d$aldersgrupp <- factor(d$aldersgrupp, levels = sortera_naturligt(appdata$konsumtion_ind$aldersgrupp))
-    d <- d[order(d$aldersgrupp), ]
+    d <- d[if (delad) order(d$aldersgrupp, factor(d$kon, levels = kon_ordning)) else order(d$aldersgrupp), ]   # order() tål inte NULL som argument
     d$aldersgrupp <- as.character(d$aldersgrupp)
-    kons_tabell(d)
+    arskol <- intersect(c("antal_ind", "mat_per_ar", "hygien_per_ar", "mat_per_ar_tot", "hygien_per_ar_tot"), names(d))
+    d <- d[c("aldersgrupp", if (delad) "kon", arskol)]
+    summa <- intersect(c("mat_per_ar_tot", "hygien_per_ar_tot"), names(d))
+    snitt <- c(mat_per_ar = "mat_per_ar_tot", hygien_per_ar = "hygien_per_ar_tot")
+    kons_tabell(kons_med_total(d, "aldersgrupp", "antal_ind", summa, snitt = snitt[names(snitt) %in% names(d)],
+                               grupp = if (delad) "kon"))
   })
 
   # ---- Näringsliv: företag (arbetsställen, anställda, omsättning) ----

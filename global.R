@@ -14,6 +14,8 @@ library(ggplot2)
 library(rdshinyappar)
 
 options(shiny.sanitize.errors = TRUE)
+# Aldrig exponentform (1e+05) på axlar eller i tabeller
+options(scipen = 999)
 
 # Färgpalett från stilmallen regiondalarna.css (grafiska manualens blå färgvektor).
 # Röd används bara som varning eller status, så den finns inte i diagrammen.
@@ -234,6 +236,33 @@ visa_tabell_dold <- function(df, heltal = character(), decimaler = 0, ...) {
   extra$columnDefs <- c(extra$columnDefs, defs)
   DT::datatable(df, rownames = FALSE, colnames = gsub("_", " ", names(df)),
                 escape = TRUE, options = do.call(dt_alt, extra))
+}
+
+# Svag bakgrund i kvinnors och mäns färger för könsuppdelade tabeller (som grupperad_tabell med gruppfarger).
+#   kolumner  kolumner som heter Kvinnor eller Män (kön som kolumner): cellerna och rubriken färgas
+#   radkol    kolumn med kön som radetikett (Kvinnor, Män, Totalt): hela raden färgas, Totalt lämnas utan färg
+# Färgerna är halvgenomskinliga (rgba), så att t.ex. markering av valt år fortfarande syns under.
+kon_bakgrund <- function(dt, kolumner = character(), radkol = NULL, markera_kol = NULL, markera_varde = NULL) {
+  svag <- function(hex, a) { m <- grDevices::col2rgb(hex)[, 1]; sprintf("rgba(%d,%d,%d,%.2f)", m[1], m[2], m[3], a) }
+  hex <- c(Kvinnor = rd_farg$kvinnor, Män = rd_farg$man)
+  kol <- intersect(kolumner, names(hex))
+  # markera_kol/markera_varde: raden där kolumnen markera_kol har värdet markera_varde (t.ex. valt år) får en
+  # starkare ton av könets färg i stället för den vanliga markeringsfärgen
+  for (k in kol) {
+    dt <- if (!is.null(markera_kol) && length(markera_varde))
+      DT::formatStyle(dt, k, valueColumns = markera_kol,
+                      backgroundColor = DT::styleEqual(markera_varde, svag(hex[[k]], 0.45), default = svag(hex[[k]], 0.14)))
+    else DT::formatStyle(dt, k, backgroundColor = svag(hex[[k]], 0.14))
+  }
+  if (length(kol)) {
+    rub <- paste(sprintf("if (t === '%s') $(this).css('background-color', '%s');", kol, vapply(hex[kol], svag, "", a = 0.30)), collapse = " ")
+    dt$x$options$headerCallback <- DT::JS(sprintf(
+      "function(thead, data, start, end, display) { $(thead).find('th').each(function() { var t = $(this).text().trim(); %s }); }", rub))
+  }
+  if (!is.null(radkol) && radkol %in% names(dt$x$data))
+    dt <- DT::formatStyle(dt, radkol, target = "row",
+                          backgroundColor = DT::styleEqual(names(hex), vapply(hex, svag, "", a = 0.14)))
+  dt
 }
 
 # Är Poppins installerat på maskinen som kör R? Då räknar diagrammen ut textens bredd med Poppins,
@@ -571,8 +600,11 @@ hamta_fem_tabeller <- function(las, inst) {
 #            kolumnnamnen (t.ex. år) blir delkolumner och ska vara lika i alla grupper
 #  markera : delkolumner som får markeringsfärg (t.ex. valt år)
 #  fet_rad : c(kolumn, värde): rader där kolumnen har värdet visas med fet text (t.ex. Totalt)
+# gruppfarger: valfri namngiven vektor (gruppnamn -> hexfärg). Gruppens kolumner får då en svag
+# bakgrund av färgen (rubrik och celler), t.ex. kvinnors och mäns färger i könsuppdelade tabeller.
 grupperad_tabell <- function(rader, grupper, decimaler = 0, markera = character(),
-                             fet_rad = NULL, ...) {
+                             fet_rad = NULL, gruppfarger = NULL, ...) {
+  svag <- function(hex, a) { m <- grDevices::col2rgb(hex)[, 1]; sprintf("rgba(%d,%d,%d,%.2f)", m[1], m[2], m[3], a) }
   delnamn <- names(grupper[[1]])
   vardekol <- unlist(lapply(names(grupper), function(g) paste(g, delnamn, sep = "||")))
   vard <- do.call(cbind, lapply(names(grupper), function(g) {
@@ -586,11 +618,17 @@ grupperad_tabell <- function(rader, grupper, decimaler = 0, markera = character(
   rubrik1 <- htmltools::tags$tr(
     lapply(names(rader), function(n) th(rowspan = 2, gsub("_", " ", n))),
     lapply(seq_along(grupper), function(i)
-      th(colspan = length(delnamn), class = "dt-center grupp-start", names(grupper)[i])))
+      th(colspan = length(delnamn), class = "dt-center grupp-start", names(grupper)[i],
+         style = if (!is.null(gruppfarger) && names(grupper)[i] %in% names(gruppfarger))
+           paste0("background-color:", svag(gruppfarger[[names(grupper)[i]]], 0.30)))))
   rubrik2 <- htmltools::tags$tr(
-    lapply(seq_along(vardekol), function(i)
+    lapply(seq_along(vardekol), function(i) {
+      gn <- sub("\\|\\|.*$", "", vardekol[i])
       th(delnamn[(i - 1) %% length(delnamn) + 1],
-         class = if ((i - 1) %% length(delnamn) == 0) "grupp-start" else NULL)))
+         class = if ((i - 1) %% length(delnamn) == 0) "grupp-start" else NULL,
+         style = if (!is.null(gruppfarger) && gn %in% names(gruppfarger))
+           paste0("background-color:", svag(gruppfarger[[gn]], 0.30)))
+    }))
   container <- htmltools::tags$table(class = "display", htmltools::tags$thead(rubrik1, rubrik2))
   tillval <- dt_alt(...)
   # Talen formateras i webbläsaren: tusentalsavgränsare, decimalkomma och – för dolda (saknade) värden.
@@ -602,8 +640,17 @@ grupperad_tabell <- function(rader, grupper, decimaler = 0, markera = character(
   tillval$columnDefs <- list(list(className = "grupp-start", targets = as.list(starter)),
                              list(targets = as.list(n_rad - 1L + seq_along(vardekol)), className = "dt-right", render = mall))
   dt <- DT::datatable(df, container = container, rownames = FALSE, escape = TRUE, options = tillval)
+  if (!is.null(gruppfarger)) {
+    for (gn in intersect(names(grupper), names(gruppfarger))) {
+      dt <- DT::formatStyle(dt, vardekol[sub("\\|\\|.*$", "", vardekol) == gn],
+                            backgroundColor = svag(gruppfarger[[gn]], 0.14))
+    }
+  }
+  # Markering (t.ex. valt år): i könsuppdelade tabeller i gruppens egen färg (starkare), annars i markeringsfärgen
   for (k in vardekol[sub("^.*\\|\\|", "", vardekol) %in% markera]) {
-    dt <- DT::formatStyle(dt, k, backgroundColor = rd_farg$mark)
+    gn <- sub("\\|\\|.*$", "", k)
+    farg <- if (!is.null(gruppfarger) && gn %in% names(gruppfarger)) svag(gruppfarger[[gn]], 0.45) else rd_farg$mark
+    dt <- DT::formatStyle(dt, k, backgroundColor = farg)
   }
   if (!is.null(fet_rad)) {
     dt <- DT::formatStyle(dt, fet_rad[1], target = "row",
@@ -1260,6 +1307,23 @@ hamta_appdata_db <- function(inst = ale_inst) {
     }
   } else namn <- paste("Distrikt", koder)
   if (!is.null(geo_kommun)) geo_kommun <- forbered_kommungeometri(geo_kommun)
+  # Pendlingsmål utanför Dalarna: namn och geometri hämtas för de kommuner som förekommer i
+  # riktning_storst_pendling men inte ingår i länets kommungeometri. Går det inte visas koden eller namnet
+  # utan karta, med tillägget (utanför Dalarna).
+  kommun_utanfor <- NULL
+  rk <- tab$tabeller$riktning_storst_pendling
+  if (!is.null(con_geo) && !is.null(rk) && !is.null(geo_kommun) && "kommunkod" %in% names(rk)) {
+    behov <- setdiff(unique(stats::na.omit(as.character(rk$kommunkod))), geo_kommun$kommunkod)
+    if (length(behov)) kommun_utanfor <- tryCatch({
+      lan <- sort(unique(substr(behov, 1, 2)))
+      gu <- rdgis::postgis_postgistabell_till_sf(con_geo, "karta", "kommun_scb",
+                                                 query = paste0("WHERE lanskod_tx IN ('", paste(lan, collapse = "','"), "')"))
+      gu <- forbered_kommungeometri(gu)
+      gu <- gu[gu$kommunkod %in% behov, ]
+      message("Kommuner utanför Dalarna (pendlingsmål): geometri för ", nrow(gu), " av ", length(behov), ".")
+      if (nrow(gu)) gu else NULL
+    }, error = function(e) { message("Kommuner utanför Dalarna: ", conditionMessage(e)); NULL })
+  }
   # Saknas kommunkod i distriktsgeometrin: placera en punkt i varje distrikt och se vilken kommun den ligger i
   if (!is.null(geo_distrikt) && !is.null(geo_kommun) && anyNA(kommunkod) && !all(is.na(geo_kommun$kommunkod))) {
     kommunkod_geo <- tryCatch({
@@ -1276,7 +1340,7 @@ hamta_appdata_db <- function(inst = ale_inst) {
     list(
       omraden = data.frame(omrade = koder, namn = namn, kommunkod = kommunkod, stringsAsFactors = FALSE),
       flytt_summering = flytt, utbildning = utb,
-      distrikt = geo_distrikt, kommun = geo_kommun, exempeldata = FALSE,
+      distrikt = geo_distrikt, kommun = geo_kommun, kommun_utanfor = kommun_utanfor, exempeldata = FALSE,
       kalla = "Källa: Dalarnas mikrodatabas (SCB), bearbetning av Samhällsanalys, Region Dalarna",
       tabellfel = tab$fel,
       flaggor = c(tab$flaggor,
