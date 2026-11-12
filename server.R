@@ -657,8 +657,8 @@ shinyServer(function(input, output, session) {
     dt <- visa_tabell(bred, dom = "t", ordering = FALSE, pageLength = 20)
     DT::formatRound(dt, setdiff(names(bred), "Drivmedel"), digits = if (andel) 1 else 0, mark = " ", dec.mark = ",")
   }
-  output$bilar_linjer_antal <- renderSvg(bredd = 9.5, hojd = 4.6, bilar_linjer_plot(FALSE))
-  output$bilar_linjer_andel <- renderSvg(bredd = 9.5, hojd = 4.6, bilar_linjer_plot(TRUE))
+  output$bilar_linjer_antal <- renderSvg(bredd = 12, hojd = 8, bilar_linjer_plot(FALSE))
+  output$bilar_linjer_andel <- renderSvg(bredd = 12, hojd = 8, bilar_linjer_plot(TRUE))
   output$bilar_antal_tabell <- renderDT(bilar_linjer_tabell_dt(FALSE))
   output$bilar_andel_tabell <- renderDT(bilar_linjer_tabell_dt(TRUE))
   # År för bilar: valt år om det finns i bilartabellerna, annars närmast tidigare år (eller första)
@@ -719,6 +719,97 @@ shinyServer(function(input, output, session) {
     ut <- ut[order(-ut$Andel), , drop = FALSE]
     dt <- visa_tabell(ut, dom = "t", ordering = FALSE, pageLength = 50)
     DT::formatRound(dt, "Andel", digits = 1, mark = " ", dec.mark = ",")
+  })
+
+  # Jämförelse över år: andelen (valt mått) för alla distrikt eller kommuner, ett värde per år
+  bilar_over_ar_data <- reactive({
+    req(input$bilar_matt %in% unname(bilar_matt))
+    m <- input$bilar_matt
+    if (identical(input$bilar_niva, "Kommuner")) {
+      validate(need(!is.null(appdata$bilar_kommun), "Tabellen bilar_kommun saknas."))
+      bk <- appdata$bilar_kommun
+      typ <- bilar_kommun_typ(bk$kommun)
+      valt_k <- bilar_valt_kommun()
+      ut <- data.frame(ar = bk$ar,
+                       namn = ifelse(typ == "kommun", bilar_kommun_visning(bk$kommun), ifelse(typ == "lan", "Dalarnas län", "Riket")),
+                       kod = bk$kommun, andel = bilar_andel(bk, m),
+                       markerad = ifelse(typ != "kommun", "annan", ifelse(bk$kommun %in% valt_k, "valt", "ovriga")),
+                       stringsAsFactors = FALSE)
+    } else {
+      validate(need(!is.null(appdata$bilar_distrikt), "Tabellen bilar_distrikt saknas."))
+      d <- appdata$bilar_distrikt
+      namn <- appdata$omraden$namn[match(d$omrade, appdata$omraden$omrade)]
+      ut <- data.frame(ar = d$ar, namn = ifelse(is.na(namn), d$omrade, namn), kod = d$omrade, andel = bilar_andel(d, m),
+                       markerad = ifelse(d$omrade == valt_omrade(), "valt", "ovriga"), stringsAsFactors = FALSE)
+    }
+    ut <- ut[is.finite(ut$andel), , drop = FALSE]
+    # Jämför bara med ett valt distrikt eller en vald kommun (annars visas alla)
+    med <- input$bilar_jamfor_med
+    if (!is.null(med) && nzchar(med) && med != "alla") {
+      ut <- ut[ut$markerad == "valt" | ut$kod == med, , drop = FALSE]
+      ut$markerad[ut$markerad != "valt"] <- "jamfor"
+    }
+    validate(need(nrow(ut) > 0, "Inga värden för valt mått."))
+    ut
+  })
+  # Listan att jämföra med följer nivån (distrikt eller kommuner)
+  observeEvent(input$bilar_niva, {
+    if (identical(input$bilar_niva, "Kommuner") && !is.null(appdata$bilar_kommun)) {
+      k <- unique(appdata$bilar_kommun$kommun)
+      typ <- bilar_kommun_typ(k)
+      namn <- ifelse(typ == "kommun", bilar_kommun_visning(k), ifelse(typ == "lan", "Dalarnas län", "Riket"))
+      val <- setNames(k, namn)
+      val <- c("Alla kommuner" = "alla", val[order(typ != "kommun", names(val))])
+    } else {
+      val <- c("Alla distrikt" = "alla", omradesval)
+    }
+    updateSelectizeInput(session, "bilar_jamfor_med", choices = val, selected = "alla")
+  })
+  output$bilar_over_ar_diagram <- renderSvg(bredd = 9.5, hojd = 5.2, {
+    d <- bilar_over_ar_data()
+    mn <- names(bilar_matt)[match(input$bilar_matt, bilar_matt)]
+    d$popup <- paste0(d$namn, "<br/>", d$ar, ": ", format(round(d$andel, 1), decimal.mark = ","), " %")
+    del <- function(x) d[d$markerad == x, , drop = FALSE]
+    lager <- function(x, farg, bredd, punkt, alpha = 1, linje = "solid") {
+      dd <- del(x)
+      if (!nrow(dd)) return(NULL)
+      list(geom_line_interactive(aes(tooltip = popup, data_id = kod), data = dd, colour = farg, linewidth = bredd,
+                                 alpha = alpha, linetype = linje),
+           geom_point_interactive(aes(tooltip = popup, data_id = paste(kod, ar)), data = dd, colour = farg, size = punkt,
+                                  alpha = alpha))
+    }
+    ggplot(d, aes(ar, andel, group = kod)) +
+      lager("ovriga", rd_farg$gra, 0.6, 1.4, alpha = 0.55) +
+      lager("annan", rd_farg$gra_mork, 0.9, 2, linje = "dashed") +
+      lager("jamfor", rd_farg$accent, 1.4, 3) +
+      lager("valt", rd_farg$primar_mork, 1.4, 3) +
+      scale_x_continuous(breaks = sort(unique(d$ar))) +
+      scale_y_continuous(labels = function(x) paste0(format(x, decimal.mark = ",", trim = TRUE), " %"),
+                         limits = c(0, NA), expand = expansion(mult = c(0, 0.06))) +
+      tema_app() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      labs(title = paste0(mn, ", andel av personbilarna över år"),
+           subtitle = if (any(d$markerad == "jamfor"))
+             paste0(unique(d$namn[d$markerad == "valt"])[1], " är mörkblått, ", unique(d$namn[d$markerad == "jamfor"])[1], " är ljusblått")
+           else paste0("Valt ", if (identical(input$bilar_niva, "Kommuner")) "kommun" else "distrikt",
+                       " är mörkblått, övriga är grå",
+                       if (any(d$markerad == "annan")) ", länet och riket streckade" else ""),
+           x = NULL, y = "Andel av personbilarna", caption = appdata$kalla)
+  })
+  output$bilar_over_ar_tabell <- renderDT({
+    d <- bilar_over_ar_data()
+    bred <- d |> select(Namn = namn, ar, andel) |>
+      tidyr::pivot_wider(names_from = ar, values_from = andel, values_fn = dplyr::first) |> as.data.frame(check.names = FALSE)
+    arskol <- setdiff(names(bred), "Namn")
+    bred <- bred[c("Namn", arskol[order(as.numeric(arskol))])]
+    arskol <- setdiff(names(bred), "Namn")
+    dt <- visa_tabell(bred, dom = "t", ordering = FALSE, pageLength = 50)
+    dt <- DT::formatRound(dt, arskol, digits = 1, mark = " ", dec.mark = ",")
+    valtnamn <- unique(d$namn[d$markerad == "valt"])
+    if (length(valtnamn))
+      dt <- DT::formatStyle(dt, "Namn", target = "row",
+                            backgroundColor = DT::styleEqual(valtnamn, rep(rd_farg$mark, length(valtnamn))),
+                            fontWeight = DT::styleEqual(valtnamn, rep("bold", length(valtnamn))))
+    dt
   })
 
   # ---- Jämför områden: befolkningsförändring över år ---------------------------
@@ -973,7 +1064,7 @@ shinyServer(function(input, output, session) {
       arrange(aldersgrupp, kon) |>
       mutate(aldersgrupp = as.character(aldersgrupp), kon = as.character(kon))
   })
-  output$inkomst_diagram <- renderSvg(bredd = 9.5, hojd = 3.8, {
+  output$inkomst_diagram <- renderSvg(bredd = 9.5, hojd = 4.5, {
     req(input$ink_matt %in% unname(inkomstmatt))
     df <- inkomsturval()
     validate(need(nrow(df) > 0 && any(is.finite(df[[input$ink_matt]])),
@@ -1029,7 +1120,7 @@ shinyServer(function(input, output, session) {
     req(!is.null(appdata$hushall_inkomst))
     appdata$hushall_inkomst |> filter(omrade == valt_omrade()) |> arrange(ar)
   })
-  output$hushall_diagram <- renderSvg(bredd = 9.5, hojd = 3.4, {
+  output$hushall_diagram <- renderSvg(bredd = 9.5, hojd = 5.2, {
     df <- hushallurval()
     validate(need(nrow(df) > 0 && any(is.finite(c(df$medel_ink, df$median_ink))),
                   "Hushållsinkomst saknas för valt distrikt."))
@@ -1065,7 +1156,7 @@ shinyServer(function(input, output, session) {
       filter(omrade == o, ar == a) |>
       arrange(kvartil_ink)
   })
-  output$ekstandard_diagram <- renderSvg(bredd = 9.5, hojd = 3.4, {
+  output$ekstandard_diagram <- renderSvg(bredd = 9.5, hojd = 5.2, {
     df <- ekstandardurval()
     validate(need(nrow(df) > 0 && any(is.finite(df$andel)),
                   "Uppgift om ekonomisk standard saknas för valt urval."))
@@ -1703,7 +1794,12 @@ shinyServer(function(input, output, session) {
       tema_app() +
       labs(title = titel, x = NULL, y = y_titel,
            caption = paste0(appdata$kalla, ". Staplar för dolda värden utelämnas."))
-    if (vandra) p + coord_flip() else p + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+    # Liggande staplar: långa etiketter bryts över flera rader, och ett litet extra mellanrum läggs efter texten.
+    # Utan det räknar diagrammet ut textens bredd med ett smalare typsnitt än Poppins i webbläsaren, och
+    # etiketterna går in under staplarna.
+    bryt <- function(x) vapply(strwrap(x, width = 30, simplify = FALSE), function(r) paste0(paste(r, collapse = "\n"), "\u00a0\u00a0\u00a0"), "")
+    if (vandra) p + scale_x_discrete(labels = bryt) + coord_flip() + theme(axis.text.y = element_text(lineheight = 0.9))
+    else p + theme(axis.text.x = element_text(angle = 30, hjust = 1))
   }
 
   # ---- Befolkning: civilstånd (personer 16 år och äldre) ----
@@ -1757,7 +1853,7 @@ shinyServer(function(input, output, session) {
     d |> arrange(aldersgrupp, kon) |> mutate(aldersgrupp = as.character(aldersgrupp))
   })
   samink_matt <- c("Medelinkomst" = "medel_ink", "Medianinkomst" = "median_ink", "Antal personer" = "antal_ind")
-  output$samink_diagram <- renderSvg(bredd = 9.5, hojd = 3.8, {
+  output$samink_diagram <- renderSvg(bredd = 9.5, hojd = 4.5, {
     req(input$samink_matt %in% unname(samink_matt))
     d <- samink_urval()
     m <- input$samink_matt
