@@ -1234,7 +1234,7 @@ shinyServer(function(input, output, session) {
   plus_strikt <- function(a, b) ifelse(is.na(a) | is.na(b), NA_real_, a + b)
 
   # ---- Arbetsmarknad: totalraden per åldersgrupp och per kön ----------------
-  output$arbm_alder_diagram <- renderSvg(bredd = 10.5, hojd = 3.4, {
+  output$arbm_alder_diagram <- renderSvg(bredd = 10.5, hojd = 4.8, {
     a <- valt_ar()
     d <- totalrad("sysselsattning_alder")
     d <- d[d$ar == a, ]
@@ -1852,7 +1852,7 @@ shinyServer(function(input, output, session) {
     d$aldersgrupp <- factor(d$aldersgrupp, levels = sortera_naturligt(appdata$sammanraknad_forv_inkomst$aldersgrupp))
     d |> arrange(aldersgrupp, kon) |> mutate(aldersgrupp = as.character(aldersgrupp))
   })
-  samink_matt <- c("Medelinkomst" = "medel_ink", "Medianinkomst" = "median_ink", "Antal personer" = "antal_ind")
+  samink_matt <- c("Medelinkomst" = "medel_ink", "Medianinkomst" = "median_ink")
   output$samink_diagram <- renderSvg(bredd = 9.5, hojd = 4.5, {
     req(input$samink_matt %in% unname(samink_matt))
     d <- samink_urval()
@@ -2046,9 +2046,10 @@ shinyServer(function(input, output, session) {
     kol <- setdiff(intersect(kol, names(df)), c("ar", "rang"))
     length(kol) > 0 && anyNA(unlist(df[kol]))
   }
-  notis <- function(fn) renderUI({
+  # extra: tilläggstext som bara visas när något är dolt (t.ex. att en totalrad inte kan visas)
+  notis <- function(fn, extra = NULL) renderUI({
     har <- tryCatch(isTRUE(fn()), error = function(e) FALSE)
-    if (har) div(class = "rd-notis", notis_text)
+    if (har) div(class = "rd-notis", paste(c(notis_text, extra), collapse = " "))
   })
   output$notis_flytt_serie <- notis(function() har_dolda(befolkning_urval("Totalt")))
   output$notis_flytt_alder_oversikt <- notis(function() har_dolda(flytt_alder_kon(), "flyttnetto"))
@@ -2058,7 +2059,7 @@ shinyServer(function(input, output, session) {
     m <- if (identical(input$vy_flytt_tab, "Alla år") && input$flytt_tabell_matt %in% names(d))
       input$flytt_tabell_matt else intersect(c("inflyttad", "utflyttad", "flyttnetto"), names(d))
     har_dolda(if (identical(input$vy_flytt_tab, "Alla år")) d else d[d$ar == valt_ar(), , drop = FALSE], m)
-  })
+  }, extra = "Totalraden visas inte (–) när någon åldersgrupp är dold.")
   output$notis_civil <- notis(function() har_dolda(civil_lang(), "antal"))
   output$notis_utb <- notis(function() {
     d <- utbildningsurval()
@@ -2076,7 +2077,8 @@ shinyServer(function(input, output, session) {
   output$notis_ekstandard <- notis(function() har_dolda(ekstandardurval(), c("antal_hus", "tot_hus", "andel")))
   output$notis_samink <- notis(function() har_dolda(samink_urval(), c("antal_ind", "median_ink", "medel_ink", "summa_forvink")))
   output$notis_hushallsstorlek <- notis(function() har_dolda(hushallsstorlek_urval(), "storlek_hushall"))
-  output$notis_kons <- notis(function() har_dolda(nytt_urval("konsumtion_hus")) || har_dolda(nytt_urval("konsumtion_ind")))
+  output$notis_kons <- notis(function() har_dolda(nytt_urval("konsumtion_hus")) || har_dolda(nytt_urval("konsumtion_ind")),
+                             extra = "Totalraden visas inte (–) när någon grupp är dold.")
   output$notis_antal_anst <- notis(function() har_dolda(antal_anst_urval(), "antal_arbetsstallen"))
   output$notis_bransch <- notis(function() har_dolda(bransch_urval(), c("antal_arbetsstallen", "anstallda")))
   output$notis_handel <- notis(function() har_dolda(handel_urval(), c("antal_arbetsstallen", "anstallda", "omsattning_tkr")))
@@ -2208,9 +2210,13 @@ shinyServer(function(input, output, session) {
                           paste0(karta_distrikt$namn, " (", karta_distrikt$omrade, ")"), isolate(valt_omrade()))
     fitBounds(k, ram$xmin - 0.05 * dx, ram$ymin - 0.05 * dy, ram$xmax + 0.05 * dx, ram$ymax + 0.05 * dy)
   })
+  # Kartan ligger i en underflik och ritas först när fliken öppnas. Proxyanrop som skickas innan dess går förlorade,
+  # så färgerna ritas först när kartan har skickat sina gränser (det händer första gången den syns).
+  kart_klar <- reactiveVal(FALSE)
+  observeEvent(input$jamfor_karta_bounds, kart_klar(TRUE), once = TRUE)
   # Färgerna ritas om via proxy när mått, år eller valt distrikt ändras (kartans läge ändras inte)
   observe({
-    req(!is.null(karta_distrikt))
+    req(!is.null(karta_distrikt), kart_klar())
     d <- kart_varden(); info <- kart_info()
     pal <- kart_palett(d$varde)
     ytor <- karta_distrikt

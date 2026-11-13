@@ -312,7 +312,9 @@ statisk_font <- local({
     klar
   }
 })
-tema_app <- function() ggplot2::theme_minimal(base_size = 12, base_family = if (poppins_finns) "Poppins" else "")
+# Källtexten under diagram (caption) är lite mindre än övrig text (standard är 80 % av grundstorleken)
+tema_app <- function() ggplot2::theme_minimal(base_size = 12, base_family = if (poppins_finns) "Poppins" else "") +
+  ggplot2::theme(plot.caption = ggplot2::element_text(size = 8))
 # girafe med Poppins som typsnitt när det finns (och när ggiraph-versionen har argumentet fonts)
 girafe_alt <- function(...) {
   if (poppins_finns && "fonts" %in% names(formals(girafe))) {
