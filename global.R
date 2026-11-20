@@ -32,6 +32,38 @@ rd_farg <- list(
   man = "#459079"          # rgb(69, 144, 121), män i staplar och linjer
 )
 
+# Flikfärger: en palett per flik, hämtade ur Region Dalarnas grafiska profil (blå, grön, gul, grå).
+# Röd används bara som varning och finns därför inte med. Samma nycklar som rd_farg, så att diagrammen
+# byter färg utan annan kod. Könsfärgerna (kvinnor/män) och grå är desamma på alla flikar.
+# primar_mork är bara en andra ton när ett diagram behöver två serier (valt/jämför, inflyttade/födda).
+# Färgerna i ui.R (CSS) måste ha samma hex-koder som här.
+#   Blå #158daf, Ljusblå 1 #8edded, Ljusblå 2 #b6f0fd | Grön #178571, Ljusgrön 1 #93cec1, Ljusgrön 2 #c5e9e2
+#   Gul #ffd378, Ljusgul 1 #ffec9f, Ljusgul 2 #fff5cc, Mörkgul #e2a855 | Grå #969696, Ljusgrå 1 #e6e6e6, Ljusgrå 2 #f1f1f1
+rd_paletter <- list(
+  "Översikt" = rd_farg,                                   # blå (som tidigare)
+  "Befolkning" = modifyList(rd_farg, list(                # mörkblå
+    primar = "#00577b", primar_mork = "#158daf", accent = "#8edded", ljus = "#b6f0fd",
+    bla_djup = "#00577b", mark = "#e0edf3")),
+  "Arbetsmarknad och näringsliv" = modifyList(rd_farg, list(   # mörkgrön
+    primar = "#0e5a4c", primar_mork = "#178571", accent = "#93cec1", ljus = "#c5e9e2",
+    bla_djup = "#0e5a4c", mark = "#e3f3f1")),
+  "Inkomst och konsumtion" = modifyList(rd_farg, list(    # ljusgrön
+    primar = "#93cec1", primar_mork = "#178571", accent = "#c5e9e2", ljus = "#c5e9e2",
+    bla_djup = "#178571", mark = "#eef8f6")),
+  "Bilinnehav" = modifyList(rd_farg, list(                # ljusblå
+    primar = "#8edded", primar_mork = "#158daf", accent = "#b6f0fd", ljus = "#b6f0fd",
+    bla_djup = "#158daf", mark = "#e3f7fc")),
+  "Jämför områden" = modifyList(rd_farg, list(            # grå
+    primar = "#969696", primar_mork = "#424242", accent = "#e6e6e6", ljus = "#e6e6e6",
+    bla_djup = "#424242", mark = "#f1f1f1"))
+)
+rd_paletter[["Om"]] <- rd_farg   # standardblå
+
+rd_palett <- function(flik = NULL) {
+  if (is.null(flik) || !flik %in% names(rd_paletter)) return(rd_farg)
+  rd_paletter[[flik]]
+}
+
 #============================================================================
 # DEL 1: Tabeller (kontrakt, validering, inläsning, exempeldata)
 #============================================================================

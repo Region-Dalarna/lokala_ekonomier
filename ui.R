@@ -46,9 +46,6 @@ shinyUI(
         .rd-card--app .rd-subtitle { margin-bottom: 12px; }
         .rd-card--app .form-group, .rd-card--app .shiny-options-group { margin-bottom: 8px; }
         .tab-content { padding-top: 16px; }
-        /* Luft mellan val av distrikt och år och flikraden under */
-        .rd-filterrad { margin-top: 28px; margin-bottom: 28px; }
-        .rd-filterrad .form-group { margin-bottom: 0; }
         /* Kort notis under diagram och tabeller när värden är dolda */
         .rd-notis { font-size: var(--rd-fs-small, 0.85rem); color: var(--rd-gray, #6c6c6c); margin-top: 8px; }
         /* Tabeller med könen som kolumngrupper: en tunn linje där varje grupp börjar */
@@ -93,6 +90,117 @@ shinyUI(
         .rd-lika::before, .rd-lika::after { display: none; }
         .rd-lika > [class*='col-'] { display: flex; flex-direction: column; }
         .rd-lika > [class*='col-'] > .rd-card { flex: 1 1 auto; }
+        /* Luft på sidorna och mellan korten */
+        .rd-innehall { max-width: 1440px; margin: 0 auto; padding: 0 56px 40px; }
+        .rd-card--app { margin-bottom: 24px; padding: 24px 28px; }
+        .rd-rad-lika > [class*='col-'], .rd-lika > [class*='col-'] { padding-left: 14px; padding-right: 14px; }
+        .rd-rad-lika, .rd-lika { margin-left: -14px; margin-right: -14px; }
+        /* Distrikt och år i kartkortet: kompakta */
+        .rd-valrad label { font-size: var(--rd-fs-small, 0.85rem); margin-bottom: 2px; }
+        .rd-valrad .form-group { margin-bottom: 10px; }
+        .rd-valrad .selectize-input, .rd-valrad select.form-control { min-height: 34px; padding: 5px 10px; font-size: 0.9rem; }
+        .rd-valt-rad { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0; min-height: 52px; padding: 8px 0;
+          font-size: var(--rd-fs-small, 0.9rem); color: var(--rd-gray-dark, #424242); }
+        .rd-valt-rad b { color: var(--rd-primary); }
+        /* Flikfärger ur den grafiska profilen (hex-koderna finns också i rd_paletter i global.R). */
+        body { --rd-primary: #158daf; }
+        body[data-flik='Översikt'] { --rd-primary: #158daf; --rd-primary-light: #eaf5f9; --rd-fliktext: #fff; }
+        body[data-flik='Befolkning'] { --rd-primary: #00577b; --rd-primary-light: #e0edf3; --rd-fliktext: #fff; }
+        body[data-flik='Arbetsmarknad och näringsliv'] { --rd-primary: #0e5a4c; --rd-primary-light: #e3f3f1; --rd-fliktext: #fff; }
+        body[data-flik='Inkomst och konsumtion'] { --rd-primary: #93cec1; --rd-primary-light: #eef8f6; --rd-fliktext: #424242; }
+        body[data-flik='Bilinnehav'] { --rd-primary: #8edded; --rd-primary-light: #eaf8fc; --rd-fliktext: #424242; }
+        body[data-flik='Jämför områden'] { --rd-primary: #969696; --rd-primary-light: #f1f1f1; --rd-fliktext: #fff; }
+        body[data-flik='Om'] { --rd-primary: #158daf; --rd-primary-light: #eaf5f9; --rd-fliktext: #fff; }
+                /* Ingen färgad kant överst på korten, och ingen rand ovanför sidhuvudet */
+        .rd-card--app { border-top: 0 !important; }
+        .rd-header { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+        .rd-header::before, .rd-header::after { display: none !important; }
+        #flikval > li > a { border-top: 5px solid var(--fc, #158daf); color: var(--rd-gray-dark, #424242); }
+        #flikval > li > a[data-value='Översikt'] { --fc: #158daf; --ft: #fff; }
+        #flikval > li > a[data-value='Befolkning'] { --fc: #00577b; --ft: #fff; }
+        #flikval > li > a[data-value='Arbetsmarknad och näringsliv'] { --fc: #0e5a4c; --ft: #fff; }
+        #flikval > li > a[data-value='Inkomst och konsumtion'] { --fc: #93cec1; --ft: #424242; }
+        #flikval > li > a[data-value='Bilinnehav'] { --fc: #8edded; --ft: #424242; }
+        #flikval > li > a[data-value='Jämför områden'] { --fc: #969696; --ft: #fff; }
+        #flikval > li > a[data-value='Om'] { --fc: #158daf; --ft: #fff; }
+        #flikval > li.active > a, #flikval > li.active > a:hover, #flikval > li.active > a:focus {
+          background: var(--rd-primary-light, #eaf5f9); color: var(--rd-gray-dark, #424242); font-weight: 600;
+          border-color: transparent; border-top-color: var(--fc); }
+        #flikval > li > a:hover { background: var(--rd-primary-light, #eaf5f9); }
+        /* Valda knappar (Diagram/Tabell, underflikar) följer flikens färg; text i mörkt när färgen är ljus */
+        .rd-card--app .nav-pills > li.active > a, .rd-underflikar > .tabbable > .nav-pills > li.active > a { color: var(--rd-fliktext, #fff) !important; }
+        .rd-card--app .nav-pills > li > a, .rd-underflikar > .tabbable > .nav-pills > li > a { border-color: var(--rd-primary); color: var(--rd-gray-dark, #424242); }
+        /* Sidhuvud och sidfot behåller standardblå oavsett flik */
+        /* Stilmallen ger body en rand överst i flikens färg (border-top: 4px solid var(--rd-primary)); den tas bort */
+        body { border-top: 0 !important; }
+        .rd-header, .rd-footer { --rd-primary: #158daf; background: #158daf !important; }
+        /* Sidhuvud och sidfot har full bredd men texten och logotypen linjerar med innehållskolumnen
+           (15 px sidpadding + 56 px kolumnpadding; kolumnen är högst 1440 px och centrerad) */
+        .rd-header, .rd-footer { padding-left: max(39px, calc(50vw - 876px)); padding-right: max(39px, calc(50vw - 876px)); }
+        .rd-valt-rad b { color: var(--rd-gray-dark, #424242); }
+        .rd-delrubrik { font-size: var(--rd-fs-h3); margin: 8px 0 12px; font-weight: 600; }
+        .rd-bilar-delar { margin-top: 12px; }
+        /* Drivmedel som knappar utan kryssruta: valda lyser upp i flikens färg */
+        #bilar_urval .shiny-options-group { display: flex; flex-wrap: wrap; gap: 8px; }
+        #bilar_urval .checkbox-inline { position: relative; display: inline-flex; align-items: center; margin: 0 !important;
+          padding: 6px 16px; border: 1.5px solid var(--rd-primary); border-radius: 999px;
+          background: #fff; color: var(--rd-gray-dark, #424242); white-space: nowrap; cursor: pointer; font-size: 0.9rem; }
+        #bilar_urval .checkbox-inline input[type=checkbox] { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+        #bilar_urval .checkbox-inline:hover { background: var(--rd-primary-light, #eaf5f9); }
+        #bilar_urval .checkbox-inline:has(input:checked) { background: var(--rd-primary); color: var(--rd-fliktext, #fff); font-weight: 600; }
+        #bilar_urval .checkbox-inline:has(input:focus-visible) { outline: 2px solid var(--rd-gray-dark, #424242); outline-offset: 2px; }
+        /* Breda tabeller på fliken Befolkning: lite mindre text och tätare celler så att de ryms i kortet.
+           Överflödig bredd rullar i sidled i stället för att sticka ut ur kortet. */
+        #flytttabell, #flytt_alder_valt_ar { overflow-x: auto; max-width: 100%; }
+        #flytttabell table.dataTable, #flytt_alder_valt_ar table.dataTable { font-size: 0.78rem; width: 100% !important; }
+        #flytttabell table.dataTable tbody td, #flytttabell table.dataTable thead th,
+        #flytt_alder_valt_ar table.dataTable tbody td, #flytt_alder_valt_ar table.dataTable thead th { padding: 6px 7px; }
+        /* Knapp 'Ändra område' under sidhuvudet */
+        #till_oversikt { display: inline-block; padding: 6px 18px; border: 1.5px solid #158daf; border-radius: 999px;
+          background: #fff; color: #158daf; font-weight: 600; text-decoration: none; cursor: pointer; }
+        #till_oversikt:hover { background: #eaf5f9; }
+        body[data-flik='Översikt'] #till_oversikt { display: none; }
+        /* Layout: sidokolumn till vänster, flikar och innehåll till höger */
+        .rd-innehall { max-width: 1800px; padding: 24px 24px 40px; }
+        .rd-layout { display: flex; align-items: flex-start; gap: 28px; }
+        .rd-side { flex: 0 0 300px; width: 300px; position: sticky; top: 16px; }
+        /* Sidokolumnen behåller standardblå oavsett aktiv flik */
+        .rd-side { --rd-primary: #158daf; --rd-primary-light: #eaf5f9; --rd-fliktext: #fff; }
+        .rd-side .rd-card--app { padding: 20px 20px 22px; margin-bottom: 0; }
+        .rd-side #karta { margin-top: 6px; border-radius: var(--rd-radius-sm); }
+        .rd-main { flex: 1 1 0; min-width: 0; }
+        @media (max-width: 1000px) {
+          .rd-layout { flex-direction: column; }
+          .rd-side { position: static; flex: none; width: 100%; }
+          .rd-main { width: 100%; }
+        }
+        #flikval { display: flex; flex-wrap: nowrap; width: 100%; margin: 0; padding: 0; }
+        #flikval::before, #flikval::after { display: none; }
+        #flikval > li { flex: 1 1 0; float: none; margin-bottom: -1px; }
+        #flikval { align-items: stretch; }
+        #flikval > li { display: flex; }
+        #flikval > li > a { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; text-align: center;
+          white-space: normal; margin-right: 0; border-radius: 0; padding: 12px 8px; font-weight: 500; }
+        /* Mer luft och bättre läsbarhet i innehållet under flikarna */
+        .tab-content { padding-top: 32px; }
+        .rd-card--app { padding: 28px 36px 30px; margin-bottom: 32px; line-height: 1.6; }
+        .rd-card--app h2 { margin-bottom: 6px; }
+        .rd-card--app .rd-subtitle { margin-bottom: 20px; line-height: 1.5; }
+        .rd-card--app .form-group, .rd-card--app .shiny-options-group { margin-bottom: 14px; }
+        .rd-card--app .radio-inline, .rd-card--app .checkbox-inline { margin-right: 14px; }
+        .rd-card--app .nav-pills { margin-bottom: 18px; }
+        .rd-card--app table.dataTable tbody td, .rd-card--app table.dataTable thead th { padding: 9px 12px; }
+        .rd-card--app .rd-notis { margin-top: 14px; line-height: 1.5; }
+        .rd-rad-lika > [class*='col-'], .rd-lika > [class*='col-'] { padding-left: 18px; padding-right: 18px; }
+        .rd-rad-lika, .rd-lika { margin-left: -18px; margin-right: -18px; }
+        .rd-kpi-row { margin-bottom: 8px; }
+      ")),
+      # Sätter aktiv flik som attribut på body så att färgerna ovan slår igenom
+      tags$script(HTML("
+        $(document).on('click', '#flikval > li > a', function() {
+          document.body.setAttribute('data-flik', $(this).attr('data-value')); });
+        $(function() { document.body.setAttribute('data-flik', 'Översikt'); });
+        Shiny.addCustomMessageHandler('rd_flik', function(f) { document.body.setAttribute('data-flik', f); });
       "))
     ),
 
@@ -113,300 +221,307 @@ shinyUI(
     if (appdata$exempeldata)
       div(class = "rd-info", role = "status",
           "Demonstrationsläge: alla värden och distriktsnamn är syntetiska, inte statistik om Dalarna."),
-    fluidRow(class = "rd-filterrad",
-             column(4, selectizeInput("omrade", "Distrikt", choices = omradesval,
-                                      options = list(placeholder = "Skriv för att söka distrikt", maxOptions = 2000,
-                                                     closeAfterSelect = TRUE, selectOnTab = TRUE))),
-             column(2, selectInput("ar", "År", choices = arval,
-                                   selected = if (length(arval)) max(arval) else NULL))
-    ),
-    # En enda flikrad. Varje flik har avsnitt i kort (.rd-card ur stilmallen).
-    tabsetPanel(
-      id = 'flikval',
-      tabPanel('Översikt',
-               uiOutput("nyckeltal"),
-               fluidRow(class = "rd-rad-lika",
-                        column(5, kort("Distriktsindelning i Dalarna",
-                                       "Klicka på ett distrikt i kartan för att välja det.",
-                                       uiOutput("kartstatus"),
-                                       leafletOutput("karta", height = "520px"))),
-                        column(7, kort("Flyttnetto per åldersgrupp",
-                                       "Inflyttade minus utflyttade för valt år.",
-                                       uiOutput("status_flytt_alder"),
-                                       radioButtons("vis_flytt", NULL, choices = visaval, inline = TRUE),
-                                       girafeOutput("flytt_alder_diagram"),
-                                       uiOutput("notis_flytt_alder_oversikt")))
-               )
-      ),
-      tabPanel('Befolkning',
-               vykort("Befolkningsutveckling", "vy_bef", efter = uiOutput("notis_flytt_serie"),
-                      diagram = tagList(
-                        fluidRow(
-                          column(6, radioButtons("vis_bef", "Befolkningsutveckling", choices = visaval, inline = TRUE)),
-                          column(6, radioButtons("bef_skala", "Inflyttade och utflyttade",
-                                                 choices = c("Samma skala i alla distrikt", "Anpassad efter distriktet"),
-                                                 inline = TRUE))
-                        ),
-                        fluidRow(
-                          column(6, girafeOutput("befolkning_diagram")),
-                          column(6, girafeOutput("flytt_trend_diagram"))
-                        )),
-                      tabell = DTOutput("flytttabell"),
-                      "Hela tidsserien för valt distrikt, valt år markerat. Uppdelningen på kön gäller befolkningen; inflyttade och utflyttade saknar uppdelning på kön och visas alltid som Totalt.",
-                      uiOutput("status_flytt_serie_ar")),
-               kort("Flytt per åldersgrupp",
-                    "Totalt, eller uppdelat på kvinnor och män. Inflyttade, utflyttade och flyttnetto visas bredvid varandra för valt år.",
-                    radioButtons("vis_flytt_tabell", NULL, choices = visaval, inline = TRUE),
-                    DTOutput("flytt_alder_valt_ar"),
-                    uiOutput("notis_flytt_alder_tabell")),
-               vykort("Civilstånd", "vy_civil", efter = uiOutput("notis_civil"),
-                      diagram = girafeOutput("civil_diagram"),
-                      tabell = DTOutput("civil_tabell"),
-                      "Personer 18 år och äldre som bor i distriktet, valt år. Diagrammet visar totalt eller uppdelat på kön; tabellen visar alla tre. – betyder att uppgiften inte visas.",
-                      uiOutput("status_flytt_civilstand"),
-                      radioButtons("vis_civil", NULL, choices = visaval, inline = TRUE))
-      ),
-      tabPanel('Arbetsmarknad och näringsliv',
-               div(class = 'rd-underflikar', tabsetPanel(id = 'arbm_ftg', type = 'pills',
-                                                         tabPanel('Arbetsmarknad',
-                                                                  fluidRow(
-                                                                    column(6, kort("Förvärvsarbetande efter näringsgren och sektor",
-                                                                                   "Rader inom näringsgren och sektor kan överlappa varandra och ska inte summeras över rader.",
+    # Allt innehåll ligger i en kolumn med luft på sidorna
+    div(class = "rd-innehall",
+        div(class = "rd-layout",
+            # ---- Sidokolumn: ligger kvar när man byter flik, så att man alltid ser valt område ----
+            tags$aside(class = "rd-side",
+                       kort("Välj område",
+                            "Sök distrikt eller klicka i kartan. Valen gäller alla flikar.",
+                            selectizeInput("omrade", "Distrikt", choices = omradesval, width = "100%",
+                                           options = list(placeholder = "Skriv för att söka distrikt", maxOptions = 2000,
+                                                          closeAfterSelect = TRUE, selectOnTab = TRUE)),
+                            selectInput("ar", "År", choices = arval, width = "100%",
+                                        selected = if (length(arval)) max(arval) else NULL),
+                            uiOutput("kartstatus"),
+                            leafletOutput("karta", height = "360px"))
+            ),
+            div(class = "rd-main",
+                # En enda flikrad. Varje flik har avsnitt i kort (.rd-card ur stilmallen).
+                tabsetPanel(
+                  id = 'flikval',
+                  tabPanel('Översikt',
+                           uiOutput("nyckeltal"),
+                           kort("Flyttnetto per åldersgrupp",
+                                "Inflyttade minus utflyttade för valt år.",
+                                uiOutput("status_flytt_alder"),
+                                radioButtons("vis_flytt", NULL, choices = visaval, inline = TRUE),
+                                girafeOutput("flytt_alder_diagram"),
+                                uiOutput("notis_flytt_alder_oversikt"))
+                  ),
+                  tabPanel('Befolkning',
+                           vykort("Befolkningsutveckling", "vy_bef", efter = uiOutput("notis_flytt_serie"),
+                                  diagram = tagList(
+                                    fluidRow(
+                                      column(6, radioButtons("vis_bef", "Befolkningsutveckling", choices = visaval, inline = TRUE)),
+                                      column(6, radioButtons("bef_skala", "Inflyttade och utflyttade",
+                                                             choices = c("Samma skala i alla distrikt", "Anpassad efter distriktet"),
+                                                             inline = TRUE))
+                                    ),
+                                    fluidRow(
+                                      column(6, girafeOutput("befolkning_diagram")),
+                                      column(6, girafeOutput("flytt_trend_diagram"))
+                                    )),
+                                  tabell = DTOutput("flytttabell"),
+                                  "Hela tidsserien för valt distrikt, valt år markerat. Uppdelningen på kön gäller befolkningen; inflyttade och utflyttade saknar uppdelning på kön och visas alltid som Totalt.",
+                                  uiOutput("status_flytt_serie_ar")),
+                           kort("Flytt per åldersgrupp",
+                                "Totalt, eller uppdelat på kvinnor och män. Inflyttade, utflyttade och flyttnetto visas bredvid varandra för valt år.",
+                                radioButtons("vis_flytt_tabell", NULL, choices = visaval, inline = TRUE),
+                                DTOutput("flytt_alder_valt_ar"),
+                                uiOutput("notis_flytt_alder_tabell")),
+                           vykort("Civilstånd", "vy_civil", efter = uiOutput("notis_civil"),
+                                  diagram = girafeOutput("civil_diagram"),
+                                  tabell = DTOutput("civil_tabell"),
+                                  "Personer 18 år och äldre som bor i distriktet, valt år. Diagrammet visar totalt eller uppdelat på kön; tabellen visar alla tre. – betyder att uppgiften inte visas.",
+                                  uiOutput("status_flytt_civilstand"),
+                                  radioButtons("vis_civil", NULL, choices = visaval, inline = TRUE))
+                  ),
+                  tabPanel('Arbetsmarknad och näringsliv',
+                           div(class = 'rd-underflikar', tabsetPanel(id = 'arbm_ftg', type = 'pills',
+                                                                     tabPanel('Arbetsmarknad',
+                                                                              fluidRow(
+                                                                                column(6, kort("Förvärvsarbetande efter näringsgren och sektor",
+                                                                                               "Rader inom näringsgren och sektor kan överlappa varandra och ska inte summeras över rader.",
+                                                                                               fluidRow(
+                                                                                                 column(6, selectInput("syss_block", "Del av tabellen", choices = blockval_syss)),
+                                                                                                 column(6, radioButtons("vis_syss", "Kön", choices = visaval, inline = TRUE))
+                                                                                               ))),
+                                                                                column(6, kort("Antal förvärvsarbetande",
+                                                                                               uiOutput("status_sysselsattning_kon"),
+                                                                                               radioButtons("vis_arbm", NULL, choices = visaval, inline = TRUE),
+                                                                                               DTOutput("arbm_kon_tabell"),
+                                                                                               uiOutput("notis_arbm_kon")))
+                                                                              ),
+                                                                              fluidRow(
+                                                                                # Tre vyer av samma data; bubbeldiagrammet visas först. Bubblornas yta är proportionell mot antalet.
+                                                                                column(12, kort("Antal förvärvsarbetande",
+                                                                                                tabsetPanel(id = "vy_syss", type = "pills",
+                                                                                                            tabPanel("Bubbeldiagram", plotOutput("syss_cirkel_diagram", height = "620px")),
+                                                                                                            tabPanel("Stapeldiagram", girafeOutput("syss_kon_diagram")),
+                                                                                                            tabPanel("Tabell", DTOutput("syss_kon_tabell"))),
+                                                                                                uiOutput("notis_syss_kon")))
+                                                                              ),
+                                                                              kort("Fördelning",
+                                                                                   "Hur förvärvsarbetande fördelar sig på näringsgrenar eller sektorer. Varje stapel är 100 %.",
+                                                                                   radioButtons("vis_fordelning", "Staplar per", choices = c("Åldersgrupp", "Kön"), inline = TRUE),
+                                                                                   girafeOutput("fordelning_diagram")),
+                                                                              kort("Åldersgrupper per rad", DTOutput("syss_alder_tabell"), uiOutput("notis_syss_alder")),
+                                                                              fluidRow(class = "rd-lika",
+                                                                                       column(6, vykort("Förvärvsarbetande efter åldersgrupp", "vy_arbm_alder", efter = uiOutput("notis_arbm_alder"),
+                                                                                                        diagram = girafeOutput("arbm_alder_diagram"),
+                                                                                                        tabell = DTOutput("arbm_alder_tabell"),
+                                                                                                        "Valt år.",
+                                                                                                        uiOutput("status_sysselsattning_alder"))),
+                                                                                       column(6, vykort("Utbildningsnivå", "vy_utb", efter = uiOutput("notis_utb"),
+                                                                                                        diagram = girafeOutput("utbildning"),
+                                                                                                        tabell = DTOutput("utbildningstabell"),
+                                                                                                        "Antal eller andel av alla personer i åldersgruppen (inklusive uppgift saknas). Y-axeln för antal är densamma för alla år i valt distrikt. Tabellen visar alla kön för valt år. Åldersavgränsningen behöver bekräftas före användning av riktig statistik.",
+                                                                                                        radioButtons("vis_utb", NULL, choices = visaval, inline = TRUE),
+                                                                                                        radioButtons("vis_utb_enhet", NULL, choices = c("Antal", "Andel"), inline = TRUE)))
+                                                                              )
+                                                                     ),
+                                                                     tabPanel('Pendling',
+                                                                              fluidRow(
+                                                                                column(6, vykort("Största utpendlingsriktningar", "vy_riktning",
+                                                                                                 diagram = tagList(uiOutput("pendling_karta_status"),
+                                                                                                                   leafletOutput("pendling_karta", height = "440px")),
+                                                                                                 tabell = DTOutput("pendling_riktning_tabell"),
+                                                                                                 flikar = c("Karta", "Tabell"),
+                                                                                                 "De tre kommuner som flest pendlar till från valt distrikt, valt år. Valt distrikt är mörkgrått.",
+                                                                                                 uiOutput("status_riktning_storst_pendling"))),
+                                                                                column(6, kort("Pendling",
+                                                                                               "Antal per år.",
+                                                                                               uiOutput("status_pendling"),
+                                                                                               radioButtons("vis_pend", NULL, choices = visaval, inline = TRUE),
+                                                                                               DTOutput("pendling_tabell"),
+                                                                                               uiOutput("notis_pend")))
+                                                                              ),
+                                                                     ),
+                                                                     tabPanel('Näringsliv',
+                                                                              vykort("Arbetsställen efter antal anställda", "vy_antal_anst", efter = uiOutput("notis_antal_anst"),
+                                                                                     diagram = girafeOutput("antal_anst_diagram"),
+                                                                                     tabell = DTOutput("antal_anst_tabell"),
+                                                                                     "Antal arbetsställen per storleksklass i valt distrikt och år. Antal företag redovisas inte.",
+                                                                                     uiOutput("status_antal_anstallda")),
+                                                                              vykort("Näringsgrenar", "vy_bransch", efter = uiOutput("notis_bransch"),
+                                                                                     diagram = girafeOutput("bransch_diagram"),
+                                                                                     tabell = DTOutput("bransch_tabell"),
+                                                                                     "Arbetsställen och anställda per näringsgren (avdelning) i valt distrikt och år. Totalt visas i tabellen.",
+                                                                                     uiOutput("status_foretag_bransch"),
+                                                                                     radioButtons("bransch_matt", NULL, choices = c("Antal arbetsställen" = "antal_arbetsstallen",
+                                                                                                                                    "Anställda" = "anstallda"), inline = TRUE)),
+                                                                              vykort("Handel och restaurang", "vy_handel", efter = uiOutput("notis_handel"),
+                                                                                     diagram = girafeOutput("handel_diagram"),
+                                                                                     tabell = DTOutput("handel_tabell"),
+                                                                                     "Detaljhandel (totalt och uppdelad) samt hotell och restaurang. Omsättningen är företagets, fördelad på arbetsställena efter antal anställda. Detaljhandelns delar summerar till detaljhandel totalt.",
+                                                                                     uiOutput("status_handel"),
+                                                                                     radioButtons("handel_matt", NULL, choices = c("Antal arbetsställen" = "antal_arbetsstallen",
+                                                                                                                                   "Anställda" = "anstallda",
+                                                                                                                                   "Omsättning (tkr)" = "omsattning_tkr"), inline = TRUE))
+                                                                     )   # slut Näringsliv
+                           )))  # slut underflikar (tabsetPanel), div och huvudflik
+                  ,
+                  tabPanel('Inkomst och konsumtion',
+                           div(class = 'rd-underflikar', tabsetPanel(id = 'ink_kons', type = 'pills',
+                                                                     tabPanel('Inkomst',
+                                                                              fluidRow(class = "rd-lika",
+                                                                                       column(6, vykort("Inkomst per åldersgrupp", "vy_ink", efter = uiOutput("notis_ink"),
+                                                                                                        diagram = girafeOutput("inkomst_diagram"),
+                                                                                                        tabell = DTOutput("inkomst_tabell"),
+                                                                                                        "Disponibel inkomst avser familjen och är ingen individuell inkomst. Y-axeln är fast för alla kön och år i valt distrikt. Totalt läses ur tabellen; appen summerar inte över kön.",
+                                                                                                        uiOutput("status_inkomst"),
+                                                                                                        fluidRow(
+                                                                                                          column(6, selectInput("ink_matt", "Inkomstmått", choices = inkomstmatt)),
+                                                                                                          column(6, radioButtons("vis_ink", "Kön", choices = visaval, inline = TRUE))
+                                                                                                        ))),
+                                                                                       column(6, vykort("Hushållsinkomst", "vy_hushall", efter = uiOutput("notis_hushall"),
+                                                                                                        diagram = girafeOutput("hushall_diagram"),
+                                                                                                        tabell = DTOutput("hushall_tabell"),
+                                                                                                        "Hushållens disponibla inkomst i kronor, ett värde per hushåll. Prickad lodrät linje markerar valt år.",
+                                                                                                        uiOutput("status_hushall_inkomst")))
+                                                                              ),
+                                                                              fluidRow(class = "rd-lika",
+                                                                                       column(6, vykort("Ekonomisk standard", "vy_ekstandard", efter = uiOutput("notis_ekstandard"),
+                                                                                                        diagram = girafeOutput("ekstandard_diagram"),
+                                                                                                        tabell = DTOutput("ekstandard_tabell"),
+                                                                                                        "Andel hushåll per kvartil av disponibel inkomst per konsumtionsenhet. Kvartilgränserna avser hela riket, så 25 % per kvartil motsvarar rikets fördelning (streckad linje).",
+                                                                                                        uiOutput("status_ekonomisk_standard"))),
+                                                                                       column(6, vykort("Sammanräknad förvärvsinkomst", "vy_samink", efter = uiOutput("notis_samink"),
+                                                                                                        diagram = girafeOutput("samink_diagram"),
+                                                                                                        tabell = DTOutput("samink_tabell"),
+                                                                                                        "Personer 16 år och äldre, per åldersgrupp, valt år. Det här är inkomst av arbete, inte familjens disponibla inkomst. – betyder att uppgiften inte visas.",
+                                                                                                        uiOutput("status_sammanraknad_forv_inkomst"),
+                                                                                                        fluidRow(
+                                                                                                          column(6, selectInput("samink_matt", "Mått",
+                                                                                                                                choices = c("Medelinkomst" = "medel_ink", "Medianinkomst" = "median_ink"))),
+                                                                                                          column(6, radioButtons("vis_samink", "Kön", choices = visaval, inline = TRUE))
+                                                                                                        )))
+                                                                              )
+                                                                     ),
+                                                                     tabPanel('Konsumtion',
+                                                                              fluidRow(
+                                                                                column(6, vykort("Hushållens storlek", "vy_hushallsstorlek", efter = uiOutput("notis_hushallsstorlek"),
+                                                                                                 diagram = girafeOutput("hushallsstorlek_diagram"),
+                                                                                                 tabell = DTOutput("hushallsstorlek_tabell"),
+                                                                                                 "Antal hushåll efter antal personer i hushållet, valt år. Är det för få hushåll av en storlek slås storlekarna ihop (till exempel 6+ personer), så att inget behöver döljas. – betyder att uppgiften inte visas.",
+                                                                                                 uiOutput("status_storlek_hushall")))
+                                                                              ),
+                                                                              kort("Konsumtionskostnader",
+                                                                                   "Konsumentverkets beräkningar av kostnader för förbrukningsvaror, kopplade på antalet hushåll och personer i distriktet. Hushåll slås ihop till större grupper (till exempel 6+ personer) när det är för få hushåll i en storlek, och kostnaden per grupp är då ett vägt medelvärde av storlekarnas kostnader. Tabellerna visar årsbelopp per grupp och en totalrad för hela distriktet längst ned. För 0 år avser kostnad per år bara ett halvår.",
+                                                                                   uiOutput("status_konsumtion_hus"),
+                                                                                   uiOutput("status_konsumtion_ind"),
+                                                                                   tabsetPanel(id = "vy_kons", type = "pills",
+                                                                                               tabPanel("Hushåll", DTOutput("kons_hus_tabell")),
+                                                                                               tabPanel("Personer per åldersgrupp",
+                                                                                                        radioButtons("vis_kons", NULL, choices = visaval, inline = TRUE),
+                                                                                                        DTOutput("kons_ind_tabell"))),
+                                                                                   uiOutput("notis_kons"))
+                                                                     )   # slut Konsumtion
+                           ))   # slut underflikar (tabsetPanel) och div
+                  ),
+                  tabPanel('Bilinnehav',
+                           # Allt om bilinnehavet i ett kort: val av drivmedel överst, sedan antal och andel bredvid varandra
+                           kort("Personbilar i trafik",
+                                "Utvecklingen för valt distrikt från första året fram till valt år, en linje per drivmedel. Välj vilka drivmedel som ska visas.",
+                                uiOutput("status_bilar_distrikt"),
+                                uiOutput("status_bilar_kommun"),
+                                checkboxGroupInput("bilar_urval", "Visa drivmedel",
+                                                   choices = unname(bilar_drivmedel),
+                                                   selected = unname(bilar_drivmedel), inline = TRUE),
+                                fluidRow(class = "rd-bilar-delar",
+                                         column(6, h3(class = "rd-delrubrik", "Antal personbilar"),
+                                                tabsetPanel(id = "vy_bilar_antal", type = "pills",
+                                                            tabPanel("Diagram", girafeOutput("bilar_linjer_antal")),
+                                                            tabPanel("Tabell", DTOutput("bilar_antal_tabell")))),
+                                         column(6, h3(class = "rd-delrubrik", "Andel av personbilarna"),
+                                                tabsetPanel(id = "vy_bilar_andel", type = "pills",
+                                                            tabPanel("Diagram", girafeOutput("bilar_linjer_andel")),
+                                                            tabPanel("Tabell", DTOutput("bilar_andel_tabell"))),
+                                                div(class = "rd-notis", "Andelen räknas av alla personbilar, även när bara några drivmedel visas."))
+                                )
+                           )
+                  ),
+                  tabPanel('Jämför områden',
+                           div(class = 'rd-underflikar', tabsetPanel(id = 'jamfor_flikar', type = 'pills',
+                                                                     tabPanel('Jämför områden',
+                                                                              kort("Valt distrikt jämfört med övriga distrikt",
+                                                                                   "Markerat är valt distrikt. Jämförelsen gäller valt år och mått. Antal påverkas av distriktens storlek och är inte andelar. Klicka på en tabellrad för att välja distrikt.",
                                                                                    fluidRow(
-                                                                                     column(6, selectInput("syss_block", "Del av tabellen", choices = blockval_syss)),
-                                                                                     column(6, radioButtons("vis_syss", "Kön", choices = visaval, inline = TRUE))
-                                                                                   ))),
-                                                                    column(6, kort("Antal förvärvsarbetande",
-                                                                                   uiOutput("status_sysselsattning_kon"),
-                                                                                   radioButtons("vis_arbm", NULL, choices = visaval, inline = TRUE),
-                                                                                   DTOutput("arbm_kon_tabell"),
-                                                                                   uiOutput("notis_arbm_kon")))
-                                                                  ),
-                                                                  fluidRow(
-                                                                    # Tre vyer av samma data; bubbeldiagrammet visas först. Bubblornas yta är proportionell mot antalet.
-                                                                    column(12, kort("Antal förvärvsarbetande",
-                                                                                    tabsetPanel(id = "vy_syss", type = "pills",
-                                                                                                tabPanel("Bubbeldiagram", plotOutput("syss_cirkel_diagram", height = "620px")),
-                                                                                                tabPanel("Stapeldiagram", girafeOutput("syss_kon_diagram")),
-                                                                                                tabPanel("Tabell", DTOutput("syss_kon_tabell"))),
-                                                                                    uiOutput("notis_syss_kon")))
-                                                                  ),
-                                                                  kort("Fördelning",
-                                                                       "Hur förvärvsarbetande fördelar sig på näringsgrenar eller sektorer. Varje stapel är 100 %.",
-                                                                       radioButtons("vis_fordelning", "Staplar per", choices = c("Åldersgrupp", "Kön"), inline = TRUE),
-                                                                       girafeOutput("fordelning_diagram")),
-                                                                  kort("Åldersgrupper per rad", DTOutput("syss_alder_tabell"), uiOutput("notis_syss_alder")),
-                                                                  fluidRow(class = "rd-lika",
-                                                                           column(6, vykort("Förvärvsarbetande efter åldersgrupp", "vy_arbm_alder", efter = uiOutput("notis_arbm_alder"),
-                                                                                            diagram = girafeOutput("arbm_alder_diagram"),
-                                                                                            tabell = DTOutput("arbm_alder_tabell"),
-                                                                                            "Valt år.",
-                                                                                            uiOutput("status_sysselsattning_alder"))),
-                                                                           column(6, vykort("Utbildningsnivå", "vy_utb", efter = uiOutput("notis_utb"),
-                                                                                            diagram = girafeOutput("utbildning"),
-                                                                                            tabell = DTOutput("utbildningstabell"),
-                                                                                            "Antal eller andel av alla personer i åldersgruppen (inklusive uppgift saknas). Y-axeln för antal är densamma för alla år i valt distrikt. Tabellen visar alla kön för valt år. Åldersavgränsningen behöver bekräftas före användning av riktig statistik.",
-                                                                                            radioButtons("vis_utb", NULL, choices = visaval, inline = TRUE),
-                                                                                            radioButtons("vis_utb_enhet", NULL, choices = c("Antal", "Andel"), inline = TRUE)))
-                                                                  )
-                                                         ),
-                                                         tabPanel('Pendling',
-                                                                  fluidRow(
-                                                                    column(6, vykort("Största utpendlingsriktningar", "vy_riktning",
-                                                                                     diagram = tagList(uiOutput("pendling_karta_status"),
-                                                                                                       leafletOutput("pendling_karta", height = "440px")),
-                                                                                     tabell = DTOutput("pendling_riktning_tabell"),
-                                                                                     flikar = c("Karta", "Tabell"),
-                                                                                     "De tre kommuner som flest pendlar till från valt distrikt, valt år. Valt distrikt är mörkgrått.",
-                                                                                     uiOutput("status_riktning_storst_pendling"))),
-                                                                    column(6, kort("Pendling",
-                                                                                   "Antal per år.",
-                                                                                   uiOutput("status_pendling"),
-                                                                                   radioButtons("vis_pend", NULL, choices = visaval, inline = TRUE),
-                                                                                   DTOutput("pendling_tabell"),
-                                                                                   uiOutput("notis_pend")))
-                                                                  ),
-                                                         ),
-                                                         tabPanel('Näringsliv',
-                                                                  vykort("Arbetsställen efter antal anställda", "vy_antal_anst", efter = uiOutput("notis_antal_anst"),
-                                                                         diagram = girafeOutput("antal_anst_diagram"),
-                                                                         tabell = DTOutput("antal_anst_tabell"),
-                                                                         "Antal arbetsställen per storleksklass i valt distrikt och år. Antal företag redovisas inte.",
-                                                                         uiOutput("status_antal_anstallda")),
-                                                                  vykort("Näringsgrenar", "vy_bransch", efter = uiOutput("notis_bransch"),
-                                                                         diagram = girafeOutput("bransch_diagram"),
-                                                                         tabell = DTOutput("bransch_tabell"),
-                                                                         "Arbetsställen och anställda per näringsgren (avdelning) i valt distrikt och år. Totalt visas i tabellen.",
-                                                                         uiOutput("status_foretag_bransch"),
-                                                                         radioButtons("bransch_matt", NULL, choices = c("Antal arbetsställen" = "antal_arbetsstallen",
-                                                                                                                        "Anställda" = "anstallda"), inline = TRUE)),
-                                                                  vykort("Handel och restaurang", "vy_handel", efter = uiOutput("notis_handel"),
-                                                                         diagram = girafeOutput("handel_diagram"),
-                                                                         tabell = DTOutput("handel_tabell"),
-                                                                         "Detaljhandel (totalt och uppdelad) samt hotell och restaurang. Omsättningen är företagets, fördelad på arbetsställena efter antal anställda. Detaljhandelns delar summerar till detaljhandel totalt.",
-                                                                         uiOutput("status_handel"),
-                                                                         radioButtons("handel_matt", NULL, choices = c("Antal arbetsställen" = "antal_arbetsstallen",
-                                                                                                                       "Anställda" = "anstallda",
-                                                                                                                       "Omsättning (tkr)" = "omsattning_tkr"), inline = TRUE))
-                                                         )   # slut Näringsliv
-               )))  # slut underflikar (tabsetPanel), div och huvudflik
-      ,
-      tabPanel('Inkomst och konsumtion',
-               div(class = 'rd-underflikar', tabsetPanel(id = 'ink_kons', type = 'pills',
-                                                         tabPanel('Inkomst',
-                                                                  fluidRow(class = "rd-lika",
-                                                                           column(6, vykort("Inkomst per åldersgrupp", "vy_ink", efter = uiOutput("notis_ink"),
-                                                                                            diagram = girafeOutput("inkomst_diagram"),
-                                                                                            tabell = DTOutput("inkomst_tabell"),
-                                                                                            "Disponibel inkomst avser familjen och är ingen individuell inkomst. Y-axeln är fast för alla kön och år i valt distrikt. Totalt läses ur tabellen; appen summerar inte över kön.",
-                                                                                            uiOutput("status_inkomst"),
-                                                                                            fluidRow(
-                                                                                              column(6, selectInput("ink_matt", "Inkomstmått", choices = inkomstmatt)),
-                                                                                              column(6, radioButtons("vis_ink", "Kön", choices = visaval, inline = TRUE))
-                                                                                            ))),
-                                                                           column(6, vykort("Hushållsinkomst", "vy_hushall", efter = uiOutput("notis_hushall"),
-                                                                                            diagram = girafeOutput("hushall_diagram"),
-                                                                                            tabell = DTOutput("hushall_tabell"),
-                                                                                            "Hushållens disponibla inkomst i kronor, ett värde per hushåll. Prickad lodrät linje markerar valt år.",
-                                                                                            uiOutput("status_hushall_inkomst")))
-                                                                  ),
-                                                                  fluidRow(class = "rd-lika",
-                                                                           column(6, vykort("Ekonomisk standard", "vy_ekstandard", efter = uiOutput("notis_ekstandard"),
-                                                                                            diagram = girafeOutput("ekstandard_diagram"),
-                                                                                            tabell = DTOutput("ekstandard_tabell"),
-                                                                                            "Andel hushåll per kvartil av disponibel inkomst per konsumtionsenhet. Kvartilgränserna avser hela riket, så 25 % per kvartil motsvarar rikets fördelning (streckad linje).",
-                                                                                            uiOutput("status_ekonomisk_standard"))),
-                                                                           column(6, vykort("Sammanräknad förvärvsinkomst", "vy_samink", efter = uiOutput("notis_samink"),
-                                                                                            diagram = girafeOutput("samink_diagram"),
-                                                                                            tabell = DTOutput("samink_tabell"),
-                                                                                            "Personer 16 år och äldre, per åldersgrupp, valt år. Det här är inkomst av arbete, inte familjens disponibla inkomst. – betyder att uppgiften inte visas.",
-                                                                                            uiOutput("status_sammanraknad_forv_inkomst"),
-                                                                                            fluidRow(
-                                                                                              column(6, selectInput("samink_matt", "Mått",
-                                                                                                                    choices = c("Medelinkomst" = "medel_ink", "Medianinkomst" = "median_ink"))),
-                                                                                              column(6, radioButtons("vis_samink", "Kön", choices = visaval, inline = TRUE))
-                                                                                            )))
-                                                                  )
-                                                         ),
-                                                         tabPanel('Konsumtion',
-                                                                  fluidRow(
-                                                                    column(6, vykort("Hushållens storlek", "vy_hushallsstorlek", efter = uiOutput("notis_hushallsstorlek"),
-                                                                                     diagram = girafeOutput("hushallsstorlek_diagram"),
-                                                                                     tabell = DTOutput("hushallsstorlek_tabell"),
-                                                                                     "Antal hushåll efter antal personer i hushållet, valt år. Är det för få hushåll av en storlek slås storlekarna ihop (till exempel 6+ personer), så att inget behöver döljas. – betyder att uppgiften inte visas.",
-                                                                                     uiOutput("status_storlek_hushall")))
-                                                                  ),
-                                                                  kort("Konsumtionskostnader",
-                                                                       "Konsumentverkets beräkningar av kostnader för förbrukningsvaror, kopplade på antalet hushåll och personer i distriktet. Hushåll slås ihop till större grupper (till exempel 6+ personer) när det är för få hushåll i en storlek, och kostnaden per grupp är då ett vägt medelvärde av storlekarnas kostnader. Tabellerna visar årsbelopp per grupp och en totalrad för hela distriktet längst ned. För 0 år avser kostnad per år bara ett halvår.",
-                                                                       uiOutput("status_konsumtion_hus"),
-                                                                       uiOutput("status_konsumtion_ind"),
-                                                                       tabsetPanel(id = "vy_kons", type = "pills",
-                                                                                   tabPanel("Hushåll", DTOutput("kons_hus_tabell")),
-                                                                                   tabPanel("Personer per åldersgrupp",
-                                                                                            radioButtons("vis_kons", NULL, choices = visaval, inline = TRUE),
-                                                                                            DTOutput("kons_ind_tabell"))),
-                                                                       uiOutput("notis_kons"))
-                                                         )   # slut Konsumtion
-               ))   # slut underflikar (tabsetPanel) och div
-      ),
-      tabPanel('Bilinnehav',
-               kort("Personbilar i trafik",
-                    "Utvecklingen för valt distrikt från första året fram till valt år, en linje per drivmedel. Bocka ur de drivmedel du inte vill se.",
-                    uiOutput("status_bilar_distrikt"),
-                    uiOutput("status_bilar_kommun"),
-                    checkboxGroupInput("bilar_urval", "Visa drivmedel",
-                                       choices = unname(bilar_drivmedel),
-                                       selected = unname(bilar_drivmedel), inline = TRUE)),
-               fluidRow(class = "rd-lika",
-                        column(6, vykort("Antal personbilar", "vy_bilar_antal",
-                                         diagram = girafeOutput("bilar_linjer_antal"),
-                                         tabell = DTOutput("bilar_antal_tabell"))),
-                        column(6, vykort("Andel av personbilarna", "vy_bilar_andel",
-                                         diagram = girafeOutput("bilar_linjer_andel"),
-                                         tabell = DTOutput("bilar_andel_tabell"),
-                                         "Andelen räknas av alla personbilar, även när bara några drivmedel visas."))
-               )
-      ),
-      tabPanel('Jämför områden',
-               div(class = 'rd-underflikar', tabsetPanel(id = 'jamfor_flikar', type = 'pills',
-                                                         tabPanel('Jämför områden',
-                                                                  kort("Valt distrikt jämfört med övriga distrikt",
-                                                                       "Markerat är valt distrikt. Jämförelsen gäller valt år och mått. Antal påverkas av distriktens storlek och är inte andelar. Klicka på en tabellrad för att välja distrikt.",
-                                                                       fluidRow(
-                                                                         column(4, selectInput("indikator", "Jämförelsemått", choices = indikatorer)),
-                                                                         column(4, selectInput("rangordning", "Distrikt i diagrammet",
-                                                                                               choices = c("15 högsta samt valt distrikt" = "hogst",
-                                                                                                           "15 lägsta samt valt distrikt" = "lagst")))
-                                                                       ),
-                                                                       textOutput("jamforelsestatus")),
-                                                                  vykort("Jämförelse", "vy_jamfor",
-                                                                         diagram = girafeOutput("jamforelse"),
-                                                                         tabell = DTOutput("jamforelsetabell")),
-                                                                  vykort("Befolkningsförändring över år", "vy_bef_jamfor",
-                                                                         diagram = girafeOutput("bef_jamfor_diagram"),
-                                                                         tabell = DTOutput("bef_jamfor_tabell"),
-                                                                         "Varje distrikt jämförs med sitt första år i serien. Valt distrikt är mörkblått och övriga är grå.",
-                                                                         radioButtons("bef_jamfor_matt", NULL,
-                                                                                      choices = c("Procent sedan första året", "Förändring i antal personer"),
-                                                                                      inline = TRUE))
-                                                         ),
-                                                         tabPanel('Jämför på karta',
-                                                                  kort("Jämför på karta",
-                                                                       "Distrikten färgas efter värdet i valt år. Bara mått som går att jämföra mellan olika stora distrikt ingår (medelvärden, medianer, andelar och kvoter). Grått betyder att värdet är dolt eller saknas. Klicka på ett distrikt för att välja det; valt distrikt har blå kantlinje.",
-                                                                       selectInput("kart_indikator", "Mått på kartan", choices = kartindikatorer, width = "420px"),
-                                                                       uiOutput("jamfor_kartstatus"),
-                                                                       leafletOutput("jamfor_karta", height = "620px"),
-                                                                       uiOutput("notis_jamfor_karta"))
-                                                         ),
-                                                         tabPanel('Jämför bilinnehav',
-                                                                  kort("Jämförelse av bilinnehav, valt år",
-                                                                       "Andelen personbilar per drivmedel, valt år. Valt distrikt, eller dess kommun, är mörkblått. Distrikt visar de 15 högsta samt valt distrikt.",
-                                                                       fluidRow(
-                                                                         column(6, selectInput("bilar_matt", "Mått", choices = bilar_matt)),
-                                                                         column(6, radioButtons("bilar_niva", "Jämför", choices = c("Distrikt", "Kommuner"), inline = TRUE))
-                                                                       )),
-                                                                  fluidRow(class = "rd-lika",
-                                                                           column(6, vykort("Andel, valt år", "vy_bilar_jamfor",
-                                                                                            diagram = girafeOutput("bilar_jamfor_diagram"),
-                                                                                            tabell = DTOutput("bilar_jamfor_tabell"))),
-                                                                           column(6, vykort("Andel över år", "vy_bilar_over_ar",
-                                                                                            diagram = girafeOutput("bilar_over_ar_diagram"),
-                                                                                            tabell = DTOutput("bilar_over_ar_tabell"),
-                                                                                            "Samma mått och nivå som till vänster, ett värde per år.",
-                                                                                            selectizeInput("bilar_jamfor_med", "Jämför med", choices = c("Alla distrikt" = "alla"),
-                                                                                                           selected = "alla",
-                                                                                                           options = list(placeholder = "Skriv för att söka", maxOptions = 2000))))
-                                                                  )
-                                                         )
-               ))   # slut underflikar (tabsetPanel) och div
-      ),
-      tabPanel('Om',
-               kort("Om appen",
-                    "Lokala ekonomier visar befolkning, arbetsmarknad, inkomster, konsumtion och bilinnehav för Dalarnas distrikt. Välj distrikt och år längst upp. Distrikten kan jämföras med varandra under Jämför områden.",
-                    p(tags$strong("Data. "),
-                      "Uppgifterna bygger på individ- och hushållsdata ur Dalarnas mikrodatabas (SCB), bearbetade av Samhällsanalys, Region Dalarna. ",
-                      "Tabellerna är sammanställda per distrikt och år. Befolkning och flytt, civilstånd, utbildning, sysselsättning, ",
-                      "pendling, inkomster och hushåll kommer från mikrodatabasen. Bilinnehavet kommer från fordonsstatistik och ",
-                      "konsumtionskostnaderna från Konsumentverkets beräkningar av kostnader för förbrukningsvaror, ",
-                      "kopplade på antalet personer och hushåll i distriktet. Kartan använder distriktens gränser från Region Dalarnas geodata."),
-                    p(tags$strong("Röjandekontroll. "),
-                      "Alla tabeller granskas innan de läggs in, och appen gör ingen egen granskning. Granskningen följer dessa principer:"),
-                    tags$ul(
-                      tags$li("Distrikt med få invånare visas inte alls."),
-                      tags$li("Små antal döljs och visas som –. Andelar som bygger på för få personer döljs också."),
-                      tags$li("När ett dolt värde annars skulle kunna räknas fram av summan döljs ytterligare ett värde. Därför kan ett värde saknas även när det själv inte är litet."),
-                      tags$li("Medel- och medianvärden visas inte när de bygger på för få personer."),
-                      tags$li("Hushåll slås ihop till större grupper (till exempel 6+ personer) när det är för få hushåll i en storlek.")),
-                    p("Orsaken till att ett värde är dolt redovisas inte. Summor över flera rader eller områden räknas inte ut i appen ",
-                      "om något värde är dolt, utan visas då som –. Totalerna för befolkningen skyddas så långt det går.")),
-               kort("Att tänka på",
-                    tags$ul(
-                      tags$li("Disponibel inkomst avser familjen och är ingen individuell inkomst. Sammanräknad förvärvsinkomst avser inkomst av arbete."),
-                      tags$li("Näringsgrenar och sektorer överlappar varandra och summeras aldrig över rader."),
-                      tags$li("Konsumtionskostnaderna är beräknade kostnader för förbrukningsvaror, inte uppmätt konsumtion. För 0 år avser kostnaden per år bara ett halvår."),
-                      tags$li("Bilinnehavet gäller personbilar i trafik per distrikt och drivmedel.")))
-      )
-    ),
+                                                                                     column(4, selectInput("indikator", "Jämförelsemått", choices = indikatorer)),
+                                                                                     column(4, selectInput("rangordning", "Distrikt i diagrammet",
+                                                                                                           choices = c("15 högsta samt valt distrikt" = "hogst",
+                                                                                                                       "15 lägsta samt valt distrikt" = "lagst")))
+                                                                                   ),
+                                                                                   textOutput("jamforelsestatus")),
+                                                                              vykort("Jämförelse", "vy_jamfor",
+                                                                                     diagram = girafeOutput("jamforelse"),
+                                                                                     tabell = DTOutput("jamforelsetabell")),
+                                                                              vykort("Befolkningsförändring över år", "vy_bef_jamfor",
+                                                                                     diagram = girafeOutput("bef_jamfor_diagram"),
+                                                                                     tabell = DTOutput("bef_jamfor_tabell"),
+                                                                                     "Varje distrikt jämförs med sitt första år i serien. Valt distrikt är mörkblått och övriga är grå.",
+                                                                                     radioButtons("bef_jamfor_matt", NULL,
+                                                                                                  choices = c("Procent sedan första året", "Förändring i antal personer"),
+                                                                                                  inline = TRUE))
+                                                                     ),
+                                                                     tabPanel('Jämför på karta',
+                                                                              kort("Jämför på karta",
+                                                                                   "Distrikten färgas efter värdet i valt år. Bara mått som går att jämföra mellan olika stora distrikt ingår (medelvärden, medianer, andelar och kvoter). Grått betyder att värdet är dolt eller saknas. Klicka på ett distrikt för att välja det; valt distrikt har blå kantlinje.",
+                                                                                   selectInput("kart_indikator", "Mått på kartan", choices = kartindikatorer, width = "420px"),
+                                                                                   uiOutput("jamfor_kartstatus"),
+                                                                                   leafletOutput("jamfor_karta", height = "620px"),
+                                                                                   uiOutput("notis_jamfor_karta"))
+                                                                     ),
+                                                                     tabPanel('Jämför bilinnehav',
+                                                                              kort("Jämförelse av bilinnehav, valt år",
+                                                                                   "Andelen personbilar per drivmedel, valt år. Valt distrikt, eller dess kommun, är mörkblått. Distrikt visar de 15 högsta samt valt distrikt.",
+                                                                                   fluidRow(
+                                                                                     column(6, selectInput("bilar_matt", "Mått", choices = bilar_matt)),
+                                                                                     column(6, radioButtons("bilar_niva", "Jämför", choices = c("Distrikt", "Kommuner"), inline = TRUE))
+                                                                                   )),
+                                                                              fluidRow(class = "rd-lika",
+                                                                                       column(6, vykort("Andel, valt år", "vy_bilar_jamfor",
+                                                                                                        diagram = girafeOutput("bilar_jamfor_diagram"),
+                                                                                                        tabell = DTOutput("bilar_jamfor_tabell"))),
+                                                                                       column(6, vykort("Andel över år", "vy_bilar_over_ar",
+                                                                                                        diagram = girafeOutput("bilar_over_ar_diagram"),
+                                                                                                        tabell = DTOutput("bilar_over_ar_tabell"),
+                                                                                                        "Samma mått och nivå som till vänster, ett värde per år.",
+                                                                                                        selectizeInput("bilar_jamfor_med", "Jämför med", choices = c("Alla distrikt" = "alla"),
+                                                                                                                       selected = "alla",
+                                                                                                                       options = list(placeholder = "Skriv för att söka", maxOptions = 2000))))
+                                                                              )
+                                                                     )
+                           ))   # slut underflikar (tabsetPanel) och div
+                  ),
+                  tabPanel('Om',
+                           kort("Om appen",
+                                "Lokala ekonomier visar befolkning, arbetsmarknad, inkomster, konsumtion och bilinnehav för Dalarnas distrikt. Välj distrikt och år längst upp. Distrikten kan jämföras med varandra under Jämför områden.",
+                                p(tags$strong("Data. "),
+                                  "Uppgifterna bygger på individ- och hushållsdata ur Dalarnas mikrodatabas (SCB), bearbetade av Samhällsanalys, Region Dalarna. ",
+                                  "Tabellerna är sammanställda per distrikt och år. Befolkning och flytt, civilstånd, utbildning, sysselsättning, ",
+                                  "pendling, inkomster och hushåll kommer från mikrodatabasen. Bilinnehavet kommer från fordonsstatistik och ",
+                                  "konsumtionskostnaderna från Konsumentverkets beräkningar av kostnader för förbrukningsvaror, ",
+                                  "kopplade på antalet personer och hushåll i distriktet. Kartan använder distriktens gränser från Region Dalarnas geodata."),
+                                p(tags$strong("Röjandekontroll. "),
+                                  "Alla tabeller granskas innan de läggs in, och appen gör ingen egen granskning. Granskningen följer dessa principer:"),
+                                tags$ul(
+                                  tags$li("Distrikt med få invånare visas inte alls."),
+                                  tags$li("Små antal döljs och visas som –. Andelar som bygger på för få personer döljs också."),
+                                  tags$li("När ett dolt värde annars skulle kunna räknas fram av summan döljs ytterligare ett värde. Därför kan ett värde saknas även när det själv inte är litet."),
+                                  tags$li("Medel- och medianvärden visas inte när de bygger på för få personer."),
+                                  tags$li("Hushåll slås ihop till större grupper (till exempel 6+ personer) när det är för få hushåll i en storlek.")),
+                                p("Orsaken till att ett värde är dolt redovisas inte. Summor över flera rader eller områden räknas inte ut i appen ",
+                                  "om något värde är dolt, utan visas då som –. Totalerna för befolkningen skyddas så långt det går.")),
+                           kort("Att tänka på",
+                                tags$ul(
+                                  tags$li("Disponibel inkomst avser familjen och är ingen individuell inkomst. Sammanräknad förvärvsinkomst avser inkomst av arbete."),
+                                  tags$li("Näringsgrenar och sektorer överlappar varandra och summeras aldrig över rader."),
+                                  tags$li("Konsumtionskostnaderna är beräknade kostnader för förbrukningsvaror, inte uppmätt konsumtion. För 0 år avser kostnaden per år bara ett halvår."),
+                                  tags$li("Bilinnehavet gäller personbilar i trafik per distrikt och drivmedel.")))
+                  )
+                )))),
 
     # ---- Footer (matchar .rd-footer i regiondalarna_ruf.css) --------------
     tags$div(

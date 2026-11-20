@@ -1,4 +1,23 @@
 shinyServer(function(input, output, session) {
+  # Flikens färger. rd_farg är här en aktiv bindning som slår upp paletten för aktiv flik, så att
+  # alla diagram och tabellmarkeringar som använder rd_farg$... byter färg när fliken byts.
+  rd_farg_grund <- rd_farg   # grundpaletten, används om fliken inte kan läsas (utanför reaktiv kontext)
+  makeActiveBinding("rd_farg", function() {
+    rd_palett(tryCatch(input$flikval, error = function(e) NULL))
+  }, environment())
+
+  # Rad som visar valt område och år på alla flikar, med knapp till Översikt där valen görs
+  output$valt_rad <- renderUI({
+    om <- input$omrade; ar <- input$ar
+    if (is.null(om) || !nzchar(om)) return(NULL)
+    # Knappen klickar på första fliken i webbläsaren (ingen serverlogik, så den fungerar oavsett teckenkodning).
+    # Den döljs med CSS när Översikt är aktiv.
+    div(class = "rd-valt-rad",
+        span("Valt område: ", tags$b(om), " · År: ", tags$b(ar)),
+        tags$a(id = "till_oversikt", href = "#", role = "button",
+               onclick = "$('#flikval > li:first-child > a').trigger('click'); window.scrollTo(0, 0); return false;",
+               "Ändra område"))
+  })
   valt_omrade <- reactive({
     req(input$omrade %in% appdata$omraden$omrade)
     input$omrade
@@ -131,7 +150,8 @@ shinyServer(function(input, output, session) {
                     hjust = ifelse(positiv, 0, 1)),
                 size = 4.4, na.rm = TRUE) +
       facet_wrap(vars(kon), nrow = 1) +
-      scale_fill_manual(values = c(pos = rd_farg$primar, neg = rd_farg$gra_mork, kon_farger), guide = "none") +
+      # Negativa staplar: grå mellan profilens grå (#969696) och mörkgrå (#424242), blå är flikens vanliga
+      scale_fill_manual(values = c(pos = rd_farg$primar, neg = "#6e6e6e", kon_farger), guide = "none") +
       scale_x_continuous(limits = lim + c(-marginal, marginal), labels = siffror) +
       scale_y_discrete(drop = FALSE) +
       tema_app() +
@@ -359,7 +379,7 @@ shinyServer(function(input, output, session) {
       geom_point_interactive(aes(tooltip = popup, data_id = paste(kon, ar)), size = 2.6, na.rm = TRUE) +
       geom_point_interactive(aes(tooltip = popup, data_id = paste(kon, ar, "valt")),
                              data = df[df$ar == valt_ar(), ], size = 4.4, na.rm = TRUE) +
-      scale_colour_manual(values = c(Totalt = rd_farg$accent, kon_farger), name = NULL,
+      scale_colour_manual(values = c(Totalt = rd_farg$primar, kon_farger), name = NULL,
                           guide = "legend") +
       scale_x_continuous(breaks = sort(unique(df$ar))) +
       scale_y_continuous(labels = siffror, breaks = yax$breaks, minor_breaks = yax$minor) +
@@ -382,7 +402,7 @@ shinyServer(function(input, output, session) {
       geom_line(linewidth = 1, na.rm = TRUE) +
       geom_point_interactive(aes(tooltip = popup, data_id = paste(typ, ar)), size = 2.4, na.rm = TRUE) +
       geom_vline(xintercept = valt_ar(), linetype = "dotted") +
-      scale_colour_manual(values = c(Inflyttade = rd_farg$primar, Utflyttade = rd_farg$gra_mork), name = NULL) +
+      scale_colour_manual(values = c(Inflyttade = rd_farg$primar, Utflyttade = rd_farg$accent), name = NULL) +
       scale_x_continuous(breaks = sort(unique(df$ar))) +
       scale_y_continuous(labels = siffror, breaks = yax$breaks, minor_breaks = yax$minor) +
       coord_cartesian(ylim = yax$ylim, expand = FALSE) +
@@ -919,12 +939,13 @@ shinyServer(function(input, output, session) {
   }
   # Lager läggs i egna kartpaneler så att ordningen (distrikt, valt, kommun) alltid är densamma,
   # även när distrikten ritas om vid ändrad opacitet.
+  # Kartan i sidokolumnen använder alltid grundpaletten, så den ritas inte om när man byter flik
   rita_distrikt <- function(karta, opacitet) {
     addPolygons(karta, data = karta_distrikt, layerId = ~omrade, group = "distrikt",
                 label = ~paste0(namn, " (", omrade, ")"),
                 weight = 0.5, color = "white", opacity = 1,
-                fillColor = rd_farg$accent, fillOpacity = opacitet,
-                highlightOptions = highlightOptions(weight = 1, color = rd_farg$gra_mork,
+                fillColor = rd_farg_grund$accent, fillOpacity = opacitet,
+                highlightOptions = highlightOptions(weight = 1, color = rd_farg_grund$gra_mork,
                                                     fillOpacity = min(1, opacitet + 0.2),
                                                     bringToFront = FALSE),
                 options = pathOptions(pane = "pane_distrikt"))
@@ -932,8 +953,8 @@ shinyServer(function(input, output, session) {
   rita_valt <- function(karta, omrade, opacitet) {
     valt <- karta_distrikt[karta_distrikt$omrade == omrade, ]
     if (nrow(valt) != 1) return(karta)
-    addPolygons(karta, data = valt, group = "valt", fillColor = rd_farg$bla_djup,
-                fillOpacity = min(1, opacitet + 0.35), weight = 1.5, color = rd_farg$bla_djup, opacity = 1,
+    addPolygons(karta, data = valt, group = "valt", fillColor = rd_farg_grund$bla_djup,
+                fillOpacity = min(1, opacitet + 0.35), weight = 1.5, color = rd_farg_grund$bla_djup, opacity = 1,
                 label = ~paste0(namn, " (", omrade, ")"),
                 options = pathOptions(pane = "pane_valt", interactive = FALSE))
   }
@@ -982,7 +1003,7 @@ shinyServer(function(input, output, session) {
     }"
   rita_kommun <- function(karta) {
     addPolygons(karta, data = karta_kommun, group = "kommun", fill = FALSE,
-                weight = 1.2, color = rd_farg$gra_mork, opacity = 0.9,
+                weight = 1.2, color = rd_farg_grund$gra_mork, opacity = 0.9,
                 options = pathOptions(pane = "pane_kommun", interactive = FALSE))
   }
   output$karta <- renderLeaflet({
@@ -1357,7 +1378,8 @@ shinyServer(function(input, output, session) {
       labs(title = paste("Pendling", valt_ar()), x = NULL, y = "Antal personer", caption = appdata$kalla)
   })
   # ---- Största utpendlingsriktningar på karta -------------------------------
-  riktning_farger <- c(rd_farg$primar_mork, rd_farg$accent, rd_farg$ljus)   # rang 1, 2 och 3 (stilmallens blå toner)
+  makeActiveBinding("riktning_farger", function() c(rd_farg$primar_mork, rd_farg$accent, rd_farg$ljus),
+                    environment())   # rang 1, 2 och 3 (flikens toner)
   distrikt_farg <- rd_farg$gra_mork   # valt distrikt: neutral mörkgrå, rött är reserverat för varning
   normalisera_namn <- function(x) trimws(sub(" kommun$", "", tolower(trimws(as.character(x)))))
   riktningar <- reactive({
@@ -1797,8 +1819,8 @@ shinyServer(function(input, output, session) {
     # Liggande staplar: långa etiketter bryts över flera rader, och ett litet extra mellanrum läggs efter texten.
     # Utan det räknar diagrammet ut textens bredd med ett smalare typsnitt än Poppins i webbläsaren, och
     # etiketterna går in under staplarna.
-    bryt <- function(x) vapply(strwrap(x, width = 30, simplify = FALSE), function(r) paste0(paste(r, collapse = "\n"), "\u00a0\u00a0\u00a0"), "")
-    if (vandra) p + scale_x_discrete(labels = bryt) + coord_flip() + theme(axis.text.y = element_text(lineheight = 0.9))
+    bryt <- function(x) vapply(strwrap(x, width = 34, simplify = FALSE), function(r) paste0(paste(r, collapse = "\n"), "\u00a0\u00a0\u00a0"), "")
+    if (vandra) p + scale_x_discrete(labels = bryt) + coord_flip() + theme(axis.text.y = element_text(lineheight = 0.9, size = rel(0.8)))
     else p + theme(axis.text.x = element_text(angle = 30, hjust = 1))
   }
 
@@ -1998,7 +2020,7 @@ shinyServer(function(input, output, session) {
     d$bransch <- as.character(d$bransch)
     d
   })
-  output$bransch_diagram <- renderSvg(bredd = 9.5, hojd = 5.2, {
+  output$bransch_diagram <- renderSvg(bredd = 9.5, hojd = 8.6, {
     req(input$bransch_matt %in% unname(ftg_matt))
     m <- input$bransch_matt
     d <- bransch_urval() |> filter(bransch != "totalt")
