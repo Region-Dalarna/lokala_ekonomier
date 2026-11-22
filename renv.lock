@@ -3366,17 +3366,16 @@
       "URL": "https://github.com/Region-Dalarna/rdpaket",
       "BugReports": "https://github.com/Region-Dalarna/rdpaket/issues",
       "Config/roxygen2/version": "8.1.0",
-      "Remotes": "FaluPeppe/pxweb2r, Region-Dalarna/rdpaket/packages/rdverktyg",
+      "Author": "Peter Möller [aut, cre], Region Dalarna [cph]",
+      "Maintainer": "Peter Möller <larspetermoller@gmail.com>",
       "RemoteType": "github",
+      "Remotes": "FaluPeppe/pxweb2r, Region-Dalarna/rdpaket/packages/rdverktyg",
       "RemoteHost": "api.github.com",
       "RemoteRepo": "rdpaket",
       "RemoteUsername": "Region-Dalarna",
       "RemoteRef": "main",
       "RemoteSha": "c66246c641f1c5e6a00548f6425d87977f601c96",
-      "RemoteSubdir": "packages/rddiagram",
-      "NeedsCompilation": "no",
-      "Author": "Peter Möller [aut, cre], Region Dalarna [cph]",
-      "Maintainer": "Peter Möller <larspetermoller@gmail.com>"
+      "RemoteSubdir": "packages/rddiagram"
     },
     "rdgis": {
       "Package": "rdgis",
@@ -3463,17 +3462,16 @@
       "URL": "https://github.com/Region-Dalarna/rdpaket",
       "BugReports": "https://github.com/Region-Dalarna/rdpaket/issues",
       "Config/roxygen2/version": "8.1.0",
-      "Remotes": "FaluPeppe/pxweb2r, Region-Dalarna/rdpaket/packages/rdverktyg, Region-Dalarna/rdpaket/packages/rdshinyappar",
+      "Author": "Peter Möller [aut, cre], Region Dalarna [cph]",
+      "Maintainer": "Peter Möller <larspetermoller@gmail.com>",
       "RemoteType": "github",
+      "Remotes": "FaluPeppe/pxweb2r, Region-Dalarna/rdpaket/packages/rdverktyg, Region-Dalarna/rdpaket/packages/rdshinyappar",
       "RemoteHost": "api.github.com",
       "RemoteRepo": "rdpaket",
       "RemoteUsername": "Region-Dalarna",
       "RemoteRef": "main",
       "RemoteSha": "c66246c641f1c5e6a00548f6425d87977f601c96",
-      "RemoteSubdir": "packages/rdpostgres",
-      "NeedsCompilation": "no",
-      "Author": "Peter Möller [aut, cre], Region Dalarna [cph]",
-      "Maintainer": "Peter Möller <larspetermoller@gmail.com>"
+      "RemoteSubdir": "packages/rdpostgres"
     },
     "rdshinyappar": {
       "Package": "rdshinyappar",
