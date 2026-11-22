@@ -27,6 +27,8 @@ shinyUI(
   fluidPage(
     title = APP_TITEL,
     tags$head(
+      # telemetri (ignoreras om den inte är konfigurerad på maskinen, t.ex. vid lokal körning)
+      telemetri_ui(telemetry),
       tags$link(rel = 'icon', type = 'image/x-icon', href = 'favicon.ico'),
       tags$link(rel = 'stylesheet', type = 'text/css', href = 'regiondalarna_ruf.css'),
       tags$link(rel = 'stylesheet', type = 'text/css', href = 'app.css'),

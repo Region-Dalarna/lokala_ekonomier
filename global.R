@@ -13,6 +13,9 @@ library(readr)
 library(ggplot2)
 library(rdshinyappar)
 
+# ---- Telemetri (användningsstatistik, se Adminportalen) --------------------
+telemetry <- skapa_telemetry("lokala_ekonomier")
+
 options(shiny.sanitize.errors = TRUE)
 # Aldrig exponentform (1e+05) på axlar eller i tabeller
 options(scipen = 999)

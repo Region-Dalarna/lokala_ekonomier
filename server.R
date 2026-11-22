@@ -1,4 +1,6 @@
 shinyServer(function(input, output, session) {
+  telemetri_server(telemetry, navigation_id = 'flikval', forsta_flik = 'Översikt')
+
   # Flikens färger. rd_farg är här en aktiv bindning som slår upp paletten för aktiv flik, så att
   # alla diagram och tabellmarkeringar som använder rd_farg$... byter färg när fliken byts.
   rd_farg_grund <- rd_farg   # grundpaletten, används om fliken inte kan läsas (utanför reaktiv kontext)
