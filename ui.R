@@ -27,8 +27,6 @@ shinyUI(
   fluidPage(
     title = APP_TITEL,
     tags$head(
-      # telemetri (ignoreras om den inte är konfigurerad på maskinen, t.ex. vid lokal körning)
-      telemetri_ui(telemetry),
       tags$link(rel = 'icon', type = 'image/x-icon', href = 'favicon.ico'),
       tags$link(rel = 'stylesheet', type = 'text/css', href = 'regiondalarna_ruf.css'),
       tags$link(rel = 'stylesheet', type = 'text/css', href = 'app.css'),
@@ -135,10 +133,12 @@ shinyUI(
         /* Sidhuvud och sidfot behåller standardblå oavsett flik */
         /* Stilmallen ger body en rand överst i flikens färg (border-top: 4px solid var(--rd-primary)); den tas bort */
         body { border-top: 0 !important; }
-        .rd-header, .rd-footer { --rd-primary: #158daf; background: #158daf !important; }
+        /* Sidhuvud och sidfot behåller standardblå oavsett flik (färgvariabeln fastställs); sidfoten har i övrigt mallens utseende */
+        .rd-header, .rd-footer { --rd-primary: #158daf; }
+        .rd-header { background: #158daf !important; }
         /* Sidhuvud och sidfot har full bredd men texten och logotypen linjerar med innehållskolumnen
            (15 px sidpadding + 56 px kolumnpadding; kolumnen är högst 1440 px och centrerad) */
-        .rd-header, .rd-footer { padding-left: max(39px, calc(50vw - 876px)); padding-right: max(39px, calc(50vw - 876px)); }
+        .rd-header { padding-left: max(39px, calc(50vw - 876px)); padding-right: max(39px, calc(50vw - 876px)); }
         .rd-valt-rad b { color: var(--rd-gray-dark, #424242); }
         .rd-delrubrik { font-size: var(--rd-fs-h3); margin: 8px 0 12px; font-weight: 600; }
         .rd-bilar-delar { margin-top: 12px; }
@@ -205,6 +205,9 @@ shinyUI(
         Shiny.addCustomMessageHandler('rd_flik', function(f) { document.body.setAttribute('data-flik', f); });
       "))
     ),
+
+    # Julspecial (snö, tomte m.m.). Slås av och på med knappen på sidan. Ta bort raden när julen är över.
+    julspecial(aktiv = TRUE),
 
     # ---- Header (matchar .rd-header i regiondalarna_ruf.css) --------------
     tags$div(

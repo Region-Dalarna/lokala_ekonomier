@@ -13,6 +13,9 @@ library(readr)
 library(ggplot2)
 library(rdshinyappar)
 
+# jultema
+source("jul.R", encoding = "UTF-8")
+
 # ---- Telemetri (användningsstatistik, se Adminportalen) --------------------
 telemetry <- skapa_telemetry("lokala_ekonomier")
 
