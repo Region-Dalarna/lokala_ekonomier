@@ -207,7 +207,7 @@ shinyUI(
     ),
 
     # Julspecial (snö, tomte m.m.). Slås av och på med knappen på sidan. Ta bort raden när julen är över.
-    julspecial(aktiv = TRUE),
+    julspecial(aktiv = FALSE),
 
     # ---- Header (matchar .rd-header i regiondalarna_ruf.css) --------------
     tags$div(
